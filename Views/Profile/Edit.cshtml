@@ -1,0 +1,67 @@
+@model EditProfileViewModel
+@{
+  ViewData["Title"] = "Editar perfil";
+  var currentUser = (AeroChat.Models.User)ViewBag.CurrentUser;
+  ViewBag.SidebarUser = currentUser;
+  ViewBag.SidebarUsers = ViewBag.AllUsers;
+  ViewBag.SidebarActiveId = null;
+}
+
+<div class="app-shell">
+  @await Html.PartialAsync("_Sidebar")
+
+  <div class="profile-edit-main">
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:20px">
+      <button class="hamburger" onclick="openSidebar()" aria-label="Menú">☰</button>
+      <a href="/Profile/Index/@currentUser.Id" class="btn btn-ghost" style="padding:7px 12px;font-size:.84rem">← Volver</a>
+      <span style="font-weight:700;font-size:1rem">Editar perfil</span>
+    </div>
+
+    <div class="profile-edit-card">
+      @if (!string.IsNullOrEmpty(Model.Error))
+      {
+        <div class="alert-error">@Model.Error</div>
+      }
+
+      <form method="post" action="/Profile/Edit">
+        <div class="field">
+          <label for="displayName">Nombre a mostrar</label>
+          <input type="text" id="displayName" name="displayName" value="@Model.DisplayName" maxlength="40" required/>
+        </div>
+        <div class="field">
+          <label for="status">Estado</label>
+          <input type="text" id="status" name="status" value="@Model.Status" maxlength="100" placeholder="¿Qué estás haciendo?"/>
+        </div>
+        <div class="field">
+          <label for="youtubeSongUrl">🎵 Canción favorita (link de YouTube)</label>
+          <input type="url" id="youtubeSongUrl" name="youtubeSongUrl" value="@Model.YoutubeSongUrl"
+                 placeholder="https://www.youtube.com/watch?v=..."/>
+        </div>
+        <div class="form-actions">
+          <a href="/Profile/Index/@currentUser.Id" class="btn btn-secondary">Cancelar</a>
+          <button type="submit" class="btn btn-primary">Guardar cambios</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+@section Scripts {
+<script>
+  function openSidebar() {
+    document.getElementById('sidebar').classList.add('open');
+    document.getElementById('sidebarOverlay').classList.add('open');
+  }
+  function closeSidebar() {
+    document.getElementById('sidebar').classList.remove('open');
+    document.getElementById('sidebarOverlay').classList.remove('open');
+  }
+  (function() {
+    var t = localStorage.getItem('ac-theme') || 'dark';
+    if (t === 'light') {
+      document.querySelector('.theme-pill-dark')?.classList.remove('active');
+      document.querySelector('.theme-pill-light')?.classList.add('active');
+    }
+  })();
+</script>
+}

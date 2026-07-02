@@ -1,0 +1,31 @@
+@model LoginViewModel
+@{ ViewData["Title"] = "Ingresar"; Layout = "_Layout"; }
+
+<div class="login-page">
+  <div class="login-card">
+    <div class="login-brand">
+      <div class="login-brand-icon">✈</div>
+      <h1>AeroChat</h1>
+      <p>Mensajería privada segura</p>
+    </div>
+
+    @if (!string.IsNullOrEmpty(Model.Error))
+    {
+      <div class="alert-error">@Model.Error</div>
+    }
+
+    <form method="post" action="/Home/Login">
+      <div class="field">
+        <label for="username">Usuario</label>
+        <input type="text" id="username" name="username" placeholder="nombre de usuario" autocomplete="username" required/>
+      </div>
+      <div class="field">
+        <label for="password">Contraseña</label>
+        <input type="password" id="password" name="password" placeholder="••••••••" autocomplete="current-password" required/>
+      </div>
+      <button type="submit" class="btn btn-primary btn-full" style="margin-top:4px">Entrar</button>
+    </form>
+
+    <p class="login-note">Solo pueden acceder usuarios autorizados por el administrador.</p>
+  </div>
+</div>

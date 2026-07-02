@@ -1,0 +1,46 @@
+[
+  {
+    "Id": "1",
+    "Username": "josue",
+    "DisplayName": "Josu\u00E9",
+    "Password": "1234",
+    "AvatarColor": "#6C63FF",
+    "AvatarPath": "/uploads/avatars/9ad5c984-fe2d-48d2-8516-cbad5b87ec59.jpg",
+    "BannerPath": null,
+    "Status": "Admin 1",
+    "YoutubeSongUrl": "https://youtu.be/3SoL8zaMS1k?si=1e5ifmfmLKrzNdxu"
+  },
+  {
+    "Id": "2",
+    "Username": "admin",
+    "DisplayName": "Admin",
+    "Password": "admin123",
+    "AvatarColor": "#00C2A8",
+    "AvatarPath": null,
+    "BannerPath": null,
+    "Status": null,
+    "YoutubeSongUrl": null
+  },
+  {
+    "Id": "3",
+    "Username": "Leana",
+    "DisplayName": "leana",
+    "Password": "leana123",
+    "AvatarColor": "#FF6584",
+    "AvatarPath": "/uploads/avatars/d2eadfd3-b584-4cf0-bbab-365635232944.jpg",
+    "BannerPath": null,
+    "Status": "Disponible \u2600",
+    "YoutubeSongUrl": null
+  },
+  {
+    "Id": "4",
+    "Username": "Wilson",
+    "DisplayName": "Wilson",
+    "Password": "wilson123",
+    "AvatarColor": "#FF6584",
+    "AvatarPath": "/uploads/avatars/0f594491-df37-4d97-893a-1d84a23ad956.jpg",
+    "BannerPath": null,
+    "Status": "Admin 2",
+    "YoutubeSongUrl": null
+  }
+]

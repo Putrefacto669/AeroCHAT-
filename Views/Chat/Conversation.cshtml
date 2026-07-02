@@ -1,0 +1,249 @@
+@model ChatViewModel
+@{
+  ViewData["Title"] = "Chat — " + Model.Recipient.DisplayName;
+  ViewBag.SidebarUser = Model.CurrentUser;
+  ViewBag.SidebarUsers = Model.AllUsers;
+  ViewBag.SidebarActiveId = Model.Recipient.Id;
+}
+
+<div class="app-shell">
+  @await Html.PartialAsync("_Sidebar")
+
+  <div class="chat-main">
+    <!-- Header -->
+    <div class="chat-header">
+      <button class="hamburger" onclick="openSidebar()" aria-label="Menú">☰</button>
+      <a href="/Profile/Index/@Model.Recipient.Id" class="chat-header-link">
+        @if (!string.IsNullOrEmpty(Model.Recipient.AvatarPath))
+        {
+          <img src="@Model.Recipient.AvatarPath" class="avatar avatar-md" alt=""/>
+        }
+        else
+        {
+          <span class="avatar avatar-md" style="background:@Model.Recipient.AvatarColor">@Model.Recipient.DisplayName[0]</span>
+        }
+        <div class="chat-header-info">
+          <div class="chat-header-name">@Model.Recipient.DisplayName</div>
+          <div class="chat-header-sub">@(!string.IsNullOrEmpty(Model.Recipient.Status) ? Model.Recipient.Status : $"@{Model.Recipient.Username}")</div>
+        </div>
+      </a>
+    </div>
+
+    @if (TempData["Error"] != null)
+    {
+      <div class="alert-error" style="margin:0 16px 0">⚠ @TempData["Error"]</div>
+    }
+
+    <!-- Messages -->
+    <div class="messages-area" id="messages">
+      @if (!Model.Messages.Any())
+      {
+        <div class="no-messages">Nada por acá todavía — ¡arrancá la conversación!</div>
+      }
+
+      @{string? lastDate = null;}
+      @foreach (var msg in Model.Messages)
+      {
+        var dateStr = msg.CreatedAt.ToString("dd 'de' MMMM", new System.Globalization.CultureInfo("es-GT"));
+        if (dateStr != lastDate)
+        {
+          <div class="date-divider">@dateStr</div>
+          lastDate = dateStr;
+        }
+
+        var isMine = msg.SenderId == Model.CurrentUser.Id;
+        var side = isMine ? "mine" : "theirs";
+        var sender = isMine ? Model.CurrentUser : Model.Recipient;
+
+        <div class="msg-row @side">
+          @if (!isMine)
+          {
+            <a href="/Profile/Index/@sender.Id">
+              @if (!string.IsNullOrEmpty(sender.AvatarPath))
+              {
+                <img src="@sender.AvatarPath" class="avatar avatar-sm" alt=""/>
+              }
+              else
+              {
+                <span class="avatar avatar-sm" style="background:@msg.SenderColor">@msg.SenderName[0]</span>
+              }
+            </a>
+          }
+
+          <div class="bubble @side @(msg.IsDeleted ? "deleted" : "") @msg.Type.ToString().ToLower()">
+            @if (msg.Type == AeroChat.Models.MessageType.Text)
+            {
+              <span class="msg-text">@msg.Content</span>
+            }
+            else if (msg.Type == AeroChat.Models.MessageType.Image)
+            {
+              <img src="@msg.FilePath" alt="@msg.FileName" class="msg-image" onclick="openLightbox(this)"/>
+            }
+            else if (msg.Type == AeroChat.Models.MessageType.Audio)
+            {
+              <div class="msg-audio">
+                <span class="file-icon">🎵</span>
+                <div><div class="file-name">@msg.FileName</div><audio controls src="@msg.FilePath"></audio></div>
+              </div>
+            }
+            else
+            {
+              <div class="msg-doc">
+                <span class="file-icon">📄</span>
+                <div>
+                  <div class="file-name">@msg.FileName</div>
+                  <a href="@msg.FilePath" download="@msg.FileName" class="file-download">Descargar</a>
+                </div>
+              </div>
+            }
+
+            <div class="msg-meta">
+              @if (msg.EditedAt.HasValue) { <span class="msg-edited">editado</span> }
+              <span class="msg-time">@msg.CreatedAt.ToString("HH:mm")</span>
+            </div>
+
+            @if (isMine && !msg.IsDeleted)
+            {
+              <div class="msg-actions">
+                @if (msg.Type == AeroChat.Models.MessageType.Text)
+                {
+                  <button class="action-btn" onclick="openEdit('@msg.Id','@System.Text.Encodings.Web.JavaScriptEncoder.Default.Encode(msg.Content)')">✏</button>
+                }
+                <button class="action-btn del" onclick="confirmDelete('@msg.Id','@Model.Recipient.Id')">🗑</button>
+              </div>
+            }
+          </div>
+        </div>
+      }
+    </div>
+
+    <!-- Input -->
+    <div class="input-area">
+      <div class="attach-panel" id="attachPanel">
+        <div class="attach-options">
+          <form method="post" action="/Chat/SendFile" enctype="multipart/form-data">
+            <input type="hidden" name="receiverId" value="@Model.Recipient.Id"/>
+            <label class="attach-opt">🖼 Imagen<input type="file" name="file" accept="image/*" onchange="this.form.submit()"/></label>
+          </form>
+          <form method="post" action="/Chat/SendFile" enctype="multipart/form-data">
+            <input type="hidden" name="receiverId" value="@Model.Recipient.Id"/>
+            <label class="attach-opt">🎵 Audio<input type="file" name="file" accept="audio/*" onchange="this.form.submit()"/></label>
+          </form>
+          <form method="post" action="/Chat/SendFile" enctype="multipart/form-data">
+            <input type="hidden" name="receiverId" value="@Model.Recipient.Id"/>
+            <label class="attach-opt">📄 Documento<input type="file" name="file" accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.zip" onchange="this.form.submit()"/></label>
+          </form>
+        </div>
+      </div>
+
+      <form method="post" action="/Chat/Send" class="send-form" id="sendForm">
+        <input type="hidden" name="receiverId" value="@Model.Recipient.Id"/>
+        <button type="button" class="icon-btn icon-btn-attach" onclick="toggleAttach()" title="Adjuntar">📎</button>
+        <input type="text" name="content" id="msgInput" placeholder="Mensaje…" autocomplete="off" class="msg-input"/>
+        <button type="submit" class="icon-btn icon-btn-send" id="sendBtn" title="Enviar">➤</button>
+      </form>
+    </div>
+  </div>
+</div>
+
+<!-- Edit modal -->
+<div class="modal-overlay" id="editModal">
+  <div class="modal">
+    <h3>Editar mensaje</h3>
+    <form method="post" action="/Chat/Edit">
+      <input type="hidden" name="messageId" id="editMsgId"/>
+      <input type="hidden" name="receiverId" value="@Model.Recipient.Id"/>
+      <textarea name="newContent" id="editContent" class="edit-textarea"></textarea>
+      <div class="modal-actions">
+        <button type="button" class="btn btn-secondary" onclick="closeModal('editModal')">Cancelar</button>
+        <button type="submit" class="btn btn-primary">Guardar</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- Delete modal -->
+<div class="modal-overlay" id="deleteModal">
+  <div class="modal">
+    <h3>Eliminar mensaje</h3>
+    <p>Esta acción no se puede deshacer.</p>
+    <form method="post" action="/Chat/Delete">
+      <input type="hidden" name="messageId" id="deleteMsgId"/>
+      <input type="hidden" name="receiverId" id="deleteRcv"/>
+      <div class="modal-actions">
+        <button type="button" class="btn btn-secondary" onclick="closeModal('deleteModal')">Cancelar</button>
+        <button type="submit" class="btn btn-danger">Eliminar</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- Lightbox -->
+<div class="lightbox" id="lightbox" onclick="closeLightbox()">
+  <img id="lightboxImg" src="" alt=""/>
+</div>
+
+@section Scripts {
+<script>
+  // Scroll to bottom
+  var msgs = document.getElementById('messages');
+  if (msgs) msgs.scrollTop = msgs.scrollHeight;
+
+  // Sidebar mobile
+  function openSidebar() {
+    document.getElementById('sidebar').classList.add('open');
+    document.getElementById('sidebarOverlay').classList.add('open');
+  }
+  function closeSidebar() {
+    document.getElementById('sidebar').classList.remove('open');
+    document.getElementById('sidebarOverlay').classList.remove('open');
+  }
+
+  // Attach
+  function toggleAttach() { document.getElementById('attachPanel').classList.toggle('open'); }
+
+  // Modals
+  function openModal(id) { document.getElementById(id).classList.add('open'); }
+  function closeModal(id) { document.getElementById(id).classList.remove('open'); }
+
+  function openEdit(id, content) {
+    document.getElementById('editMsgId').value = id;
+    document.getElementById('editContent').value = content;
+    openModal('editModal');
+  }
+  function confirmDelete(msgId, rcv) {
+    document.getElementById('deleteMsgId').value = msgId;
+    document.getElementById('deleteRcv').value = rcv;
+    openModal('deleteModal');
+  }
+
+  // Lightbox
+  function openLightbox(img) {
+    document.getElementById('lightboxImg').src = img.src;
+    document.getElementById('lightbox').classList.add('open');
+  }
+  function closeLightbox() { document.getElementById('lightbox').classList.remove('open'); }
+
+  // Close modal on overlay click
+  document.querySelectorAll('.modal-overlay').forEach(function(el) {
+    el.addEventListener('click', function(e) { if (e.target === el) el.classList.remove('open'); });
+  });
+
+  // Enter to send
+  document.getElementById('msgInput').addEventListener('keydown', function(e) {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      if (this.value.trim()) document.getElementById('sendForm').submit();
+    }
+  });
+
+  // Sync theme toggle pills on load
+  (function() {
+    var t = localStorage.getItem('ac-theme') || 'dark';
+    if (t === 'light') {
+      document.querySelector('.theme-pill-dark')?.classList.remove('active');
+      document.querySelector('.theme-pill-light')?.classList.add('active');
+    }
+  })();
+</script>
+}

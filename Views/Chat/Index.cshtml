@@ -1,0 +1,23 @@
+@{
+  ViewData["Title"] = "Chats";
+  var currentUser = (AeroChat.Models.User)ViewBag.CurrentUser;
+  var allUsers = (List<AeroChat.Models.User>)ViewBag.AllUsers;
+  ViewBag.SidebarUser = currentUser;
+  ViewBag.SidebarUsers = allUsers;
+  ViewBag.SidebarActiveId = null;
+}
+
+<div class="app-shell">
+  @await Html.PartialAsync("_Sidebar")
+
+  <div class="chat-main">
+    <div class="chat-header">
+      <button class="hamburger" onclick="openSidebar()" aria-label="Menú">☰</button>
+    </div>
+    <div class="chat-empty">
+      <div class="chat-empty-icon">✈</div>
+      <h2>Seleccioná una conversación</h2>
+      <p>Elegí un contacto del panel izquierdo para empezar.</p>
+    </div>
+  </div>
+</div>

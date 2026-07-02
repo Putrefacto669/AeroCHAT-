@@ -1,0 +1,113 @@
+@model ProfileViewModel
+@{
+  ViewData["Title"] = Model.ProfileUser.DisplayName;
+  var isOwn = Model.ProfileUser.Id == Model.CurrentUser.Id;
+  ViewBag.SidebarUser = Model.CurrentUser;
+  ViewBag.SidebarUsers = Model.AllUsers;
+  ViewBag.SidebarActiveId = null;
+}
+
+<div class="app-shell">
+  @await Html.PartialAsync("_Sidebar")
+
+  <div class="profile-main">
+    <div style="display:flex;align-items:center;gap:10px;padding:12px 18px;border-bottom:1px solid var(--border-soft);background:var(--surface)">
+      <button class="hamburger" onclick="openSidebar()" aria-label="Menú">☰</button>
+      <span style="font-size:.9rem;color:var(--text-2)">Perfil</span>
+    </div>
+
+    <div class="profile-container">
+      <!-- Banner -->
+      <div class="profile-banner" id="bannerDiv"
+           style="@(!string.IsNullOrEmpty(Model.ProfileUser.BannerPath) ? $"background-image:url('{Model.ProfileUser.BannerPath}')" : "")">
+        <div class="profile-banner-overlay"></div>
+        @if (isOwn)
+        {
+          <form method="post" action="/Profile/UploadBanner" enctype="multipart/form-data" id="bannerForm">
+            <button type="button" class="banner-edit-btn" onclick="document.getElementById('bannerFileInput').click()">
+              🖼 Cambiar banner
+            </button>
+            <input type="file" id="bannerFileInput" name="bannerFile" accept="image/*" style="display:none"
+                   onchange="document.getElementById('bannerForm').submit()"/>
+          </form>
+        }
+      </div>
+
+      <!-- Top row -->
+      <div class="profile-top">
+        <div class="profile-avatar-wrap">
+          @if (!string.IsNullOrEmpty(Model.ProfileUser.AvatarPath))
+          {
+            <img src="@Model.ProfileUser.AvatarPath" class="avatar avatar-lg" alt=""/>
+          }
+          else
+          {
+            <span class="avatar avatar-lg" style="background:@Model.ProfileUser.AvatarColor">@Model.ProfileUser.DisplayName[0]</span>
+          }
+          @if (isOwn)
+          {
+            <form method="post" action="/Profile/UploadAvatar" enctype="multipart/form-data" id="avatarForm">
+              <button type="button" class="avatar-edit-btn" title="Cambiar foto" onclick="document.getElementById('avatarFileInput').click()">📷</button>
+              <input type="file" id="avatarFileInput" name="avatarFile" accept="image/*" style="display:none"
+                     onchange="document.getElementById('avatarForm').submit()"/>
+            </form>
+          }
+        </div>
+
+        <div class="profile-info-row">
+          <div class="profile-name">@Model.ProfileUser.DisplayName</div>
+          <div class="profile-username">@@@Model.ProfileUser.Username</div>
+          @if (!string.IsNullOrEmpty(Model.ProfileUser.Status))
+          {
+            <div class="profile-status">@Model.ProfileUser.Status</div>
+          }
+        </div>
+
+        <div class="profile-btns">
+          @if (isOwn)
+          {
+            <a href="/Profile/Edit" class="btn btn-secondary">✏ Editar perfil</a>
+          }
+          else
+          {
+            <a href="/Chat/Conversation/@Model.ProfileUser.Id" class="btn btn-primary">💬 Mensaje</a>
+          }
+        </div>
+      </div>
+
+      <!-- YouTube -->
+      @if (!string.IsNullOrEmpty(Model.YoutubeEmbedId))
+      {
+        <div class="profile-section">
+          <div class="profile-section-title">🎵 Canción favorita</div>
+          <div class="yt-wrap">
+            <iframe src="https://www.youtube.com/embed/@Model.YoutubeEmbedId?rel=0&modestbranding=1"
+                    title="Canción favorita" frameborder="0"
+                    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                    allowfullscreen></iframe>
+          </div>
+        </div>
+      }
+    </div>
+  </div>
+</div>
+
+@section Scripts {
+<script>
+  function openSidebar() {
+    document.getElementById('sidebar').classList.add('open');
+    document.getElementById('sidebarOverlay').classList.add('open');
+  }
+  function closeSidebar() {
+    document.getElementById('sidebar').classList.remove('open');
+    document.getElementById('sidebarOverlay').classList.remove('open');
+  }
+  (function() {
+    var t = localStorage.getItem('ac-theme') || 'dark';
+    if (t === 'light') {
+      document.querySelector('.theme-pill-dark')?.classList.remove('active');
+      document.querySelector('.theme-pill-light')?.classList.add('active');
+    }
+  })();
+</script>
+}

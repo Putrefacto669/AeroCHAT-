@@ -1,0 +1,65 @@
+@{
+  var currentUser = ViewBag.SidebarUser as AeroChat.Models.User;
+  var allUsers = ViewBag.SidebarUsers as List<AeroChat.Models.User>;
+  var activeId = ViewBag.SidebarActiveId as string;
+  if (currentUser == null || allUsers == null) return;
+}
+
+<aside class="sidebar" id="sidebar">
+  <div class="sidebar-header">
+    <div class="sidebar-top-row">
+      <div class="sidebar-brand">
+        <div class="sidebar-brand-icon">✈</div>
+        AeroChat
+      </div>
+      <button class="theme-toggle" onclick="toggleTheme()" title="Cambiar tema" aria-label="Cambiar tema">
+        <div class="theme-toggle-pill theme-pill-dark active">🌙</div>
+        <div class="theme-toggle-pill theme-pill-light">☀️</div>
+      </button>
+    </div>
+
+    <a href="/Profile/Index/@currentUser.Id" class="sidebar-me">
+      @if (!string.IsNullOrEmpty(currentUser.AvatarPath))
+      {
+        <img src="@currentUser.AvatarPath" class="avatar avatar-md" alt=""/>
+      }
+      else
+      {
+        <span class="avatar avatar-md" style="background:@currentUser.AvatarColor">@currentUser.DisplayName[0]</span>
+      }
+      <div class="sidebar-me-info">
+        <div class="sidebar-me-name">@currentUser.DisplayName</div>
+        <div class="sidebar-me-status">@(!string.IsNullOrEmpty(currentUser.Status) ? currentUser.Status : "Mi perfil")</div>
+      </div>
+    </a>
+  </div>
+
+  <div class="sidebar-section-label">Mensajes</div>
+  <nav class="user-list">
+    @foreach (var u in allUsers)
+    {
+      var cls = u.Id == activeId ? "user-item active" : "user-item";
+      <a href="/Chat/Conversation/@u.Id" class="@cls">
+        @if (!string.IsNullOrEmpty(u.AvatarPath))
+        {
+          <img src="@u.AvatarPath" class="avatar avatar-md" alt=""/>
+        }
+        else
+        {
+          <span class="avatar avatar-md" style="background:@u.AvatarColor">@u.DisplayName[0]</span>
+        }
+        <div class="user-item-info">
+          <span class="user-item-name">@u.DisplayName</span>
+          <span class="user-item-sub">@(!string.IsNullOrEmpty(u.Status) ? u.Status : $"@{u.Username}")</span>
+        </div>
+      </a>
+    }
+  </nav>
+
+  <div class="sidebar-footer">
+    <a href="/Home/Logout" class="btn-logout">
+      <span>↩</span> Cerrar sesión
+    </a>
+  </div>
+</aside>
+<div class="sidebar-overlay" id="sidebarOverlay" onclick="closeSidebar()"></div>
