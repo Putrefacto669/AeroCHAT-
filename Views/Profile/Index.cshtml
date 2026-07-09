@@ -11,13 +11,12 @@
   @await Html.PartialAsync("_Sidebar")
 
   <div class="profile-main">
-    <div style="display:flex;align-items:center;gap:10px;padding:12px 18px;border-bottom:1px solid var(--border-soft);background:var(--surface)">
+    <div class="profile-header-bar">
       <button class="hamburger" onclick="openSidebar()" aria-label="Menú">☰</button>
       <span style="font-size:.9rem;color:var(--text-2)">Perfil</span>
     </div>
 
     <div class="profile-container">
-      <!-- Banner -->
       <div class="profile-banner" id="bannerDiv"
            style="@(!string.IsNullOrEmpty(Model.ProfileUser.BannerPath) ? $"background-image:url('{Model.ProfileUser.BannerPath}')" : "")">
         <div class="profile-banner-overlay"></div>
@@ -33,7 +32,6 @@
         }
       </div>
 
-      <!-- Top row -->
       <div class="profile-top">
         <div class="profile-avatar-wrap">
           @if (!string.IsNullOrEmpty(Model.ProfileUser.AvatarPath))
@@ -75,7 +73,6 @@
         </div>
       </div>
 
-      <!-- YouTube -->
       @if (!string.IsNullOrEmpty(Model.YoutubeEmbedId))
       {
         <div class="profile-section">

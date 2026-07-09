@@ -9,6 +9,7 @@ public class DataService
     private readonly string _usersFile;
     private readonly string _messagesFile;
     private readonly JsonSerializerOptions _opts;
+    private readonly SemaphoreSlim _lock = new(1, 1);
 
     public DataService(IWebHostEnvironment env)
     {
@@ -33,6 +34,9 @@ public class DataService
 
     public User? GetUserById(string id) => GetUsers().FirstOrDefault(u => u.Id == id);
 
+    public User? GetUserByUsername(string username)
+        => GetUsers().FirstOrDefault(u => u.Username.Equals(username, StringComparison.OrdinalIgnoreCase));
+
     public User? ValidateLogin(string username, string password)
         => GetUsers().FirstOrDefault(u =>
             u.Username.Equals(username, StringComparison.OrdinalIgnoreCase) &&
@@ -46,6 +50,25 @@ public class DataService
         users[idx] = updated;
         File.WriteAllText(_usersFile, JsonSerializer.Serialize(users, _opts));
         return true;
+    }
+
+    public User? RegisterUser(string username, string displayName, string password)
+    {
+        var users = GetUsers();
+        if (users.Any(u => u.Username.Equals(username, StringComparison.OrdinalIgnoreCase)))
+            return null;
+
+        var user = new User
+        {
+            Id = Guid.NewGuid().ToString(),
+            Username = username.ToLower(),
+            DisplayName = displayName,
+            Password = password,
+            AvatarColor = $"#{Random.Shared.Next(0x1000000):X6}"
+        };
+        users.Add(user);
+        File.WriteAllText(_usersFile, JsonSerializer.Serialize(users, _opts));
+        return user;
     }
 
     // ── MESSAGES ───────────────────────────────────────────
@@ -78,7 +101,7 @@ public class DataService
         var msg = messages.FirstOrDefault(m => m.Id == messageId && m.SenderId == userId);
         if (msg == null || msg.Type != MessageType.Text) return false;
         msg.Content = newContent;
-        msg.EditedAt = DateTime.Now;
+        msg.EditedAt = DateTime.UtcNow;
         SaveMessages(messages);
         return true;
     }
@@ -101,14 +124,17 @@ public class DataService
     public static string? ExtractYoutubeId(string? url)
     {
         if (string.IsNullOrWhiteSpace(url)) return null;
-        // Handles: youtu.be/ID, youtube.com/watch?v=ID, youtube.com/embed/ID
-        var uri = Uri.TryCreate(url, UriKind.Absolute, out var u) ? u : null;
-        if (uri == null) return null;
+        if (!Uri.TryCreate(url, UriKind.Absolute, out var uri)) return null;
 
         if (uri.Host.Contains("youtu.be"))
             return uri.AbsolutePath.Trim('/');
 
-        var query = System.Web.HttpUtility.ParseQueryString(uri.Query);
-        return query["v"] ?? uri.AbsolutePath.Split('/').LastOrDefault(s => !string.IsNullOrEmpty(s));
+        if (uri.Host.Contains("youtube.com") || uri.Host.Contains("m.youtube.com"))
+        {
+            var query = System.Web.HttpUtility.ParseQueryString(uri.Query);
+            return query["v"] ?? uri.AbsolutePath.Split('/').LastOrDefault(s => !string.IsNullOrEmpty(s));
+        }
+
+        return null;
     }
 }

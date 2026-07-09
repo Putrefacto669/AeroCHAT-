@@ -25,7 +25,7 @@ public class Message
     public string? FileName { get; set; }
     public string? FilePath { get; set; }
     public long? FileSize { get; set; }
-    public DateTime CreatedAt { get; set; } = DateTime.Now;
+    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     public DateTime? EditedAt { get; set; }
     public bool IsDeleted { get; set; } = false;
 }
@@ -45,6 +45,15 @@ public class ChatViewModel
     public User Recipient { get; set; } = new();
     public List<Message> Messages { get; set; } = new();
     public List<User> AllUsers { get; set; } = new();
+}
+
+public class RegisterViewModel
+{
+    public string Username { get; set; } = "";
+    public string DisplayName { get; set; } = "";
+    public string Password { get; set; } = "";
+    public string ConfirmPassword { get; set; } = "";
+    public string? Error { get; set; }
 }
 
 public class EditProfileViewModel

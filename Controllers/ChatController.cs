@@ -1,6 +1,8 @@
+using AeroChat.Hubs;
 using AeroChat.Models;
 using AeroChat.Services;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.SignalR;
 
 namespace AeroChat.Controllers;
 
@@ -8,12 +10,14 @@ public class ChatController : Controller
 {
     private readonly DataService _data;
     private readonly IWebHostEnvironment _env;
+    private readonly IHubContext<ChatHub> _hub;
     private const long MaxFileSize = 20 * 1024 * 1024;
 
-    public ChatController(DataService data, IWebHostEnvironment env)
+    public ChatController(DataService data, IWebHostEnvironment env, IHubContext<ChatHub> hub)
     {
         _data = data;
         _env = env;
+        _hub = hub;
     }
 
     private string? CurrentUserId => HttpContext.Session.GetString("UserId");
@@ -53,23 +57,6 @@ public class ChatController : Controller
     }
 
     [HttpPost]
-    public IActionResult Send(string receiverId, string content)
-    {
-        var a = Auth(); if (a != null) return a;
-        var sender = _data.GetUserById(CurrentUserId!);
-        if (sender == null || string.IsNullOrWhiteSpace(content))
-            return RedirectToAction("Conversation", new { id = receiverId });
-
-        _data.AddMessage(new Message
-        {
-            SenderId = sender.Id, SenderName = sender.DisplayName,
-            SenderColor = sender.AvatarColor, ReceiverId = receiverId,
-            Content = content.Trim(), Type = MessageType.Text
-        });
-        return RedirectToAction("Conversation", new { id = receiverId });
-    }
-
-    [HttpPost]
     public async Task<IActionResult> SendFile(string receiverId, IFormFile file)
     {
         var a = Auth(); if (a != null) return a;
@@ -84,6 +71,7 @@ public class ChatController : Controller
         }
 
         var ext = Path.GetExtension(file.FileName).ToLower();
+        if (string.IsNullOrEmpty(ext)) ext = ".file";
         var type = GetMessageType(ext);
         var folder = type switch { MessageType.Image => "images", MessageType.Audio => "audios", _ => "documents" };
         var dir = Path.Combine(_env.WebRootPath, "uploads", folder);
@@ -92,31 +80,19 @@ public class ChatController : Controller
         await using (var stream = new FileStream(Path.Combine(dir, safeName), FileMode.Create))
             await file.CopyToAsync(stream);
 
-        _data.AddMessage(new Message
+        var msg = _data.AddMessage(new Message
         {
             SenderId = sender.Id, SenderName = sender.DisplayName,
             SenderColor = sender.AvatarColor, ReceiverId = receiverId,
             Content = file.FileName, Type = type,
             FileName = file.FileName, FilePath = $"/uploads/{folder}/{safeName}",
-            FileSize = file.Length
+            FileSize = file.Length,
+            CreatedAt = DateTime.UtcNow
         });
-        return RedirectToAction("Conversation", new { id = receiverId });
-    }
 
-    [HttpPost]
-    public IActionResult Edit(string messageId, string receiverId, string newContent)
-    {
-        var a = Auth(); if (a != null) return a;
-        if (!string.IsNullOrWhiteSpace(newContent))
-            _data.EditMessage(messageId, CurrentUserId!, newContent.Trim());
-        return RedirectToAction("Conversation", new { id = receiverId });
-    }
+        var group = ChatHub.GroupStatic(sender.Id, receiverId);
+        await _hub.Clients.Group(group).SendAsync("ReceiveMessage", msg);
 
-    [HttpPost]
-    public IActionResult Delete(string messageId, string receiverId)
-    {
-        var a = Auth(); if (a != null) return a;
-        _data.DeleteMessage(messageId, CurrentUserId!);
         return RedirectToAction("Conversation", new { id = receiverId });
     }
 

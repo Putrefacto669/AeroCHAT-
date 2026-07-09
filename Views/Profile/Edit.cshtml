@@ -11,7 +11,7 @@
   @await Html.PartialAsync("_Sidebar")
 
   <div class="profile-edit-main">
-    <div style="display:flex;align-items:center;gap:10px;margin-bottom:20px">
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px">
       <button class="hamburger" onclick="openSidebar()" aria-label="Menú">☰</button>
       <a href="/Profile/Index/@currentUser.Id" class="btn btn-ghost" style="padding:7px 12px;font-size:.84rem">← Volver</a>
       <span style="font-weight:700;font-size:1rem">Editar perfil</span>
@@ -22,6 +22,36 @@
       {
         <div class="alert-error">@Model.Error</div>
       }
+
+      <!-- Banner preview + upload -->
+      <form method="post" action="/Profile/UploadBanner" enctype="multipart/form-data" id="bannerForm" style="display:none">
+        <input type="file" id="bannerFileInput" name="bannerFile" accept="image/*" onchange="this.form.submit()"/>
+      </form>
+      <div class="banner-edit-area" id="bannerPreview"
+           style="@(!string.IsNullOrEmpty(currentUser.BannerPath) ? $"background-image:url('{currentUser.BannerPath}')" : "")">
+        <div class="banner-edit-overlay" onclick="document.getElementById('bannerFileInput').click()">
+          🖼 Cambiar banner
+        </div>
+      </div>
+
+      <!-- Avatar preview + upload -->
+      <form method="post" action="/Profile/UploadAvatar" enctype="multipart/form-data" id="avatarForm" style="display:none">
+        <input type="file" id="avatarFileInput" name="avatarFile" accept="image/*" onchange="this.form.submit()"/>
+      </form>
+      <div class="avatar-edit-row">
+        @if (!string.IsNullOrEmpty(currentUser.AvatarPath))
+        {
+          <img src="@currentUser.AvatarPath" class="avatar avatar-lg" alt="" id="avatarPreview"/>
+        }
+        else
+        {
+          <span class="avatar avatar-lg" style="background:@currentUser.AvatarColor" id="avatarPreview">@currentUser.DisplayName[0]</span>
+        }
+        <label class="avatar-change-label">
+          📷 Cambiar foto
+          <input type="file" accept="image/*" onchange="document.getElementById('avatarFileInput').click()"/>
+        </label>
+      </div>
 
       <form method="post" action="/Profile/Edit">
         <div class="field">

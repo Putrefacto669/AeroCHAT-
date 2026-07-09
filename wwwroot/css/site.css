@@ -397,10 +397,16 @@ img.avatar { object-fit: cover; }
 .file-download:hover { text-decoration: underline; }
 audio { width: 200px; height: 32px; margin-top: 4px; border-radius: 8px; }
 
+/* ── Typing indicator ───────────────────────────────── */
+.typing-indicator {
+  font-size: .75rem; color: var(--text-3); font-style: italic;
+  padding: 2px 16px 4px; min-height: 18px; transition: var(--transition);
+}
+
 /* ── Input area ─────────────────────────────────────── */
 .input-area {
   border-top: 1px solid var(--border-soft);
-  background: var(--surface); padding: 10px 14px;
+  background: var(--surface); padding: 10px 14px 4px;
 }
 .send-form {
   display: flex; align-items: center; gap: 8px;
@@ -481,6 +487,11 @@ audio { width: 200px; height: 32px; margin-top: 4px; border-radius: 8px; }
    PROFILE
 ═══════════════════════════════════════════════════════ */
 .profile-main { flex: 1; overflow-y: auto; background: var(--bg); }
+.profile-header-bar {
+  display: flex; align-items: center; gap: 10px;
+  padding: 12px 18px; border-bottom: 1px solid var(--border-soft);
+  background: var(--surface);
+}
 .profile-container { max-width: 680px; margin: 0 auto; padding-bottom: 48px; }
 
 /* Banner */
@@ -592,6 +603,10 @@ audio { width: 200px; height: 32px; margin-top: 4px; border-radius: 8px; }
 /* ═══════════════════════════════════════════════════════
    RESPONSIVE
 ═══════════════════════════════════════════════════════ */
+@media (max-width: 1024px) {
+  .profile-container { max-width: 100%; padding: 0 12px; }
+}
+
 @media (max-width: 768px) {
   .sidebar {
     position: fixed; left: 0; top: 0; bottom: 0; z-index: 10;
@@ -602,27 +617,56 @@ audio { width: 200px; height: 32px; margin-top: 4px; border-radius: 8px; }
   .sidebar-overlay.open { display: block; }
   .hamburger { display: flex; align-items: center; justify-content: center; }
 
-  .chat-header { padding: 10px 14px; }
-  .messages-area { padding: 12px 12px; }
-  .input-area { padding: 8px 10px; }
+  .chat-header { padding: 10px 14px; min-height: 52px; }
+  .messages-area { padding: 10px 10px; }
+  .input-area { padding: 6px 8px 2px; }
 
-  .profile-banner { height: 150px; }
-  .profile-top { padding: 0 16px; margin-top: -40px; gap: 10px; }
-  .profile-name { font-size: 1.15rem; }
-  .profile-section { margin: 14px 14px 0; padding: 14px; }
-  .avatar-lg { width: 76px; height: 76px; font-size: 1.8rem; }
+  .profile-banner { height: 140px; }
+  .profile-top { padding: 0 12px; margin-top: -36px; gap: 8px; flex-wrap: wrap; }
+  .profile-name { font-size: 1.05rem; }
+  .profile-section { margin: 12px 12px 0; padding: 12px; }
+  .avatar-lg { width: 68px; height: 68px; font-size: 1.5rem; }
+  .profile-info-row { padding-bottom: 4px; }
+  .profile-btns { width: 100%; }
+  .profile-btns .btn { width: 100%; justify-content: center; }
 
   .msg-row { max-width: 85%; }
   .profile-edit-main { padding: 12px; }
-  .profile-edit-card { padding: 20px; }
+  .profile-edit-card { padding: 16px; border-radius: var(--radius); }
 
   .attach-options { flex-wrap: wrap; }
+  .attach-opt { padding: 6px 12px; font-size: .78rem; }
+
+  .msg-input { font-size: .88rem; padding: 8px 14px; }
+  .icon-btn { width: 34px; height: 34px; font-size: .9rem; }
+
+  .modal { max-width: 340px; padding: 18px; margin: 0 12px; }
 }
 
 @media (max-width: 480px) {
-  .login-card { padding: 28px 20px; border-radius: var(--radius-lg); }
+  .login-card { padding: 24px 16px; border-radius: var(--radius-lg); }
   .sidebar { width: 260px; }
-  .msg-row { max-width: 90%; }
+  .msg-row { max-width: 92%; }
+  .profile-banner { height: 120px; }
+  .profile-top { margin-top: -30px; }
+  .avatar-lg { width: 56px; height: 56px; font-size: 1.3rem; border-width: 2px; }
+  .profile-name { font-size: .95rem; }
+  .chat-header-name { font-size: .9rem; }
+  .bubble { font-size: .88rem; padding: 7px 10px 6px; }
+  .msg-text { font-size: .9rem; }
+  .msg-image { max-width: 200px; max-height: 180px; }
+  .login-brand-icon { width: 52px; height: 52px; font-size: 22px; }
+  .login-brand h1 { font-size: 1.4rem; }
+  .theme-toggle-pill { width: 24px; height: 18px; font-size: 10px; }
+}
+
+@media (max-width: 360px) {
+  .sidebar { width: 240px; }
+  .msg-row { max-width: 95%; }
+  .msg-image { max-width: 160px; max-height: 150px; }
+  audio { width: 140px; }
+  .msg-audio { min-width: 140px; }
+  .msg-doc { min-width: 140px; }
 }
 
 @media (prefers-reduced-motion: reduce) {
