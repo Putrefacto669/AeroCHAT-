@@ -35,7 +35,10 @@ public class ChatController : Controller
         if (user == null) return RedirectToAction("Logout", "Home");
 
         ViewBag.CurrentUser = user;
-        ViewBag.AllUsers = _data.GetUsers().Where(u => u.Id != user.Id).ToList();
+        ViewBag.SidebarUser = user;
+        ViewBag.SidebarItems = _data.GetSidebarItems(user.Id);
+        ViewBag.SidebarGroups = _data.GetGroupsForUser(user.Id);
+        ViewBag.SidebarActiveId = null;
         return View();
     }
 
@@ -45,6 +48,11 @@ public class ChatController : Controller
         var current = _data.GetUserById(CurrentUserId!);
         var recipient = _data.GetUserById(id);
         if (current == null || recipient == null) return RedirectToAction("Index");
+
+        ViewBag.SidebarUser = current;
+        ViewBag.SidebarItems = _data.GetSidebarItems(current.Id);
+        ViewBag.SidebarGroups = _data.GetGroupsForUser(current.Id);
+        ViewBag.SidebarActiveId = recipient.Id;
 
         var vm = new ChatViewModel
         {

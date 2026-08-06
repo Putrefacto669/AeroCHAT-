@@ -2,8 +2,6 @@
 @{
   ViewData["Title"] = Model.ProfileUser.DisplayName;
   var isOwn = Model.ProfileUser.Id == Model.CurrentUser.Id;
-  ViewBag.SidebarUser = Model.CurrentUser;
-  ViewBag.SidebarUsers = Model.AllUsers;
   ViewBag.SidebarActiveId = null;
 }
 
@@ -53,22 +51,46 @@
         </div>
 
         <div class="profile-info-row">
-          <div class="profile-name">@Model.ProfileUser.DisplayName</div>
-          <div class="profile-username">@@@Model.ProfileUser.Username</div>
+          <div class="profile-name">
+            @Model.ProfileUser.DisplayName
+            <span class="presence-dot" data-userid="@Model.ProfileUser.Id"></span>
+          </div>
+          <div class="profile-username">
+            @@@Model.ProfileUser.Username
+            <span id="profileOnline" class="online-label"></span>
+          </div>
           @if (!string.IsNullOrEmpty(Model.ProfileUser.Status))
           {
             <div class="profile-status">@Model.ProfileUser.Status</div>
           }
         </div>
 
-        <div class="profile-btns">
+        <div class="profile-btns" id="profileFriendActions"
+             data-userid="@Model.ProfileUser.Id"
+             data-isown="@(isOwn ? "1" : "0")"
+             data-requestid="@Model.RequestId">
           @if (isOwn)
           {
             <a href="/Profile/Edit" class="btn btn-secondary">✏ Editar perfil</a>
           }
-          else
+          else if (Model.FriendState == "friends")
           {
             <a href="/Chat/Conversation/@Model.ProfileUser.Id" class="btn btn-primary">💬 Mensaje</a>
+            <button type="button" class="btn btn-secondary" onclick="removeFriend('@Model.ProfileUser.Id')">Eliminar amigo</button>
+          }
+          else if (Model.FriendState == "incoming")
+          {
+            <button type="button" class="btn btn-primary" onclick="acceptRequest('@Model.ProfileUser.Id','@Model.RequestId',this)">✓ Aceptar solicitud</button>
+            <button type="button" class="btn btn-ghost" onclick="declineRequest('@Model.ProfileUser.Id','@Model.RequestId',this)">Rechazar</button>
+          }
+          else if (Model.FriendState == "outgoing")
+          {
+            <button type="button" class="btn btn-secondary" disabled>Solicitud enviada</button>
+            <button type="button" class="btn btn-ghost" onclick="cancelRequest('@Model.ProfileUser.Id')">Cancelar</button>
+          }
+          else
+          {
+            <button type="button" class="btn btn-primary" onclick="sendFriendRequest('@Model.ProfileUser.Id')">＋ Agregar amigo</button>
           }
         </div>
       </div>
@@ -85,26 +107,51 @@
           </div>
         </div>
       }
+
+      <div class="profile-section">
+        <div class="profile-section-title">Amigos (@Model.Friends.Count)</div>
+        @if (Model.Friends.Any())
+        {
+          <div class="friends-grid">
+            @foreach (var f in Model.Friends)
+            {
+              <a href="/Profile/Index/@f.Id" class="friend-card" title="@f.DisplayName">
+                <span class="avatar-wrap">
+                  @if (!string.IsNullOrEmpty(f.AvatarPath))
+                  {
+                    <img src="@f.AvatarPath" class="avatar avatar-md" alt=""/>
+                  }
+                  else
+                  {
+                    <span class="avatar avatar-md" style="background:@f.AvatarColor">@f.DisplayName[0]</span>
+                  }
+                  <span class="presence-dot" data-userid="@f.Id"></span>
+                </span>
+                <span class="friend-card-name">@f.DisplayName</span>
+              </a>
+            }
+          </div>
+        }
+        else
+        {
+          <div class="sidebar-empty">@(isOwn ? "Todavía no tenés amigos. Agregá gente desde el menú lateral." : "No tiene amigos todavía.")</div>
+        }
+      </div>
     </div>
   </div>
 </div>
 
 @section Scripts {
 <script>
-  function openSidebar() {
-    document.getElementById('sidebar').classList.add('open');
-    document.getElementById('sidebarOverlay').classList.add('open');
-  }
-  function closeSidebar() {
-    document.getElementById('sidebar').classList.remove('open');
-    document.getElementById('sidebarOverlay').classList.remove('open');
-  }
-  (function() {
-    var t = localStorage.getItem('ac-theme') || 'dark';
-    if (t === 'light') {
-      document.querySelector('.theme-pill-dark')?.classList.remove('active');
-      document.querySelector('.theme-pill-light')?.classList.add('active');
+  var profileUserId = '@Model.ProfileUser.Id';
+  function renderProfilePresence() {
+    var online = !!window.acOnlineUsers[profileUserId];
+    var el = document.getElementById('profileOnline');
+    if (el) {
+      el.textContent = online ? '· en línea' : '';
+      el.classList.toggle('online', online);
     }
-  })();
+  }
+  document.addEventListener('ac:presence', renderProfilePresence);
 </script>
 }

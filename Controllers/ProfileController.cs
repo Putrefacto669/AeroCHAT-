@@ -32,11 +32,20 @@ public class ProfileController : Controller
         var profile = _data.GetUserById(id);
         if (current == null || profile == null) return RedirectToAction("Index", "Chat");
 
+        var friends = _data.GetUsers().Where(u => current.FriendIds.Contains(u.Id)).ToList();
+        ViewBag.SidebarUser = current;
+        ViewBag.SidebarItems = _data.GetSidebarItems(current.Id);
+        ViewBag.SidebarGroups = _data.GetGroupsForUser(current.Id);
+        ViewBag.SidebarActiveId = null;
+
         var vm = new ProfileViewModel
         {
             CurrentUser = current,
             ProfileUser = profile,
             AllUsers = _data.GetUsers().Where(u => u.Id != current.Id).ToList(),
+            Friends = friends,
+            FriendState = _data.GetFriendState(current.Id, profile.Id).ToString().ToLowerInvariant(),
+            RequestId = _data.GetIncomingRequestId(current.Id, profile.Id),
             YoutubeEmbedId = DataService.ExtractYoutubeId(profile.YoutubeSongUrl)
         };
         return View(vm);
@@ -50,7 +59,10 @@ public class ProfileController : Controller
         if (user == null) return RedirectToAction("Index", "Home");
 
         ViewBag.CurrentUser = user;
-        ViewBag.AllUsers = _data.GetUsers().Where(u => u.Id != user.Id).ToList();
+        ViewBag.SidebarUser = user;
+        ViewBag.SidebarItems = _data.GetSidebarItems(user.Id);
+        ViewBag.SidebarGroups = _data.GetGroupsForUser(user.Id);
+        ViewBag.SidebarActiveId = null;
         return View(new EditProfileViewModel
         {
             DisplayName = user.DisplayName,
@@ -71,7 +83,10 @@ public class ProfileController : Controller
         {
             vm.Error = "El nombre no puede estar vacío.";
             ViewBag.CurrentUser = user;
-            ViewBag.AllUsers = _data.GetUsers().Where(u => u.Id != user.Id).ToList();
+            ViewBag.SidebarUser = user;
+            ViewBag.SidebarItems = _data.GetSidebarItems(user.Id);
+            ViewBag.SidebarGroups = _data.GetGroupsForUser(user.Id);
+            ViewBag.SidebarActiveId = null;
             return View(vm);
         }
 

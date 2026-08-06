@@ -2,8 +2,6 @@
 @{
   ViewData["Title"] = "Editar perfil";
   var currentUser = (AeroChat.Models.User)ViewBag.CurrentUser;
-  ViewBag.SidebarUser = currentUser;
-  ViewBag.SidebarUsers = ViewBag.AllUsers;
   ViewBag.SidebarActiveId = null;
 }
 
@@ -78,20 +76,5 @@
 
 @section Scripts {
 <script>
-  function openSidebar() {
-    document.getElementById('sidebar').classList.add('open');
-    document.getElementById('sidebarOverlay').classList.add('open');
-  }
-  function closeSidebar() {
-    document.getElementById('sidebar').classList.remove('open');
-    document.getElementById('sidebarOverlay').classList.remove('open');
-  }
-  (function() {
-    var t = localStorage.getItem('ac-theme') || 'dark';
-    if (t === 'light') {
-      document.querySelector('.theme-pill-dark')?.classList.remove('active');
-      document.querySelector('.theme-pill-light')?.classList.add('active');
-    }
-  })();
 </script>
 }

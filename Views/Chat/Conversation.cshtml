@@ -1,8 +1,6 @@
 @model ChatViewModel
 @{
   ViewData["Title"] = "Chat — " + Model.Recipient.DisplayName;
-  ViewBag.SidebarUser = Model.CurrentUser;
-  ViewBag.SidebarUsers = Model.AllUsers;
   ViewBag.SidebarActiveId = Model.Recipient.Id;
   var c = System.Globalization.CultureInfo.GetCultureInfo("es-GT");
 }
@@ -23,12 +21,17 @@
           <span class="avatar avatar-md" style="background:@Model.Recipient.AvatarColor">@Model.Recipient.DisplayName[0]</span>
         }
         <div class="chat-header-info">
-          <div class="chat-header-name">@Model.Recipient.DisplayName</div>
+          <div class="chat-header-name">
+            @Model.Recipient.DisplayName
+            <span class="presence-dot" id="headerDot" data-userid="@Model.Recipient.Id"></span>
+          </div>
           <div class="chat-header-sub" id="headerSub">
             @(!string.IsNullOrEmpty(Model.Recipient.Status) ? Model.Recipient.Status : $"@{Model.Recipient.Username}")
           </div>
         </div>
       </a>
+      <button class="icon-btn icon-btn-call" title="Llamada de voz"
+              onclick="callFriend('@Model.Recipient.Id','@JavaScriptEncoder.Default.Encode(Model.Recipient.DisplayName)','@Model.Recipient.AvatarPath','@Model.Recipient.AvatarColor')">📞</button>
     </div>
 
     @if (TempData["Error"] != null)
@@ -198,71 +201,78 @@
   var myName = '@JavaScriptEncoder.Default.Encode(Model.CurrentUser.DisplayName)';
   var myColor = '@Model.CurrentUser.AvatarColor';
   var myAvatar = '@Model.CurrentUser.AvatarPath';
+  var theirAvatar = '@Model.Recipient.AvatarPath';
+  var theirStatus = '@JavaScriptEncoder.Default.Encode(!string.IsNullOrEmpty(Model.Recipient.Status) ? Model.Recipient.Status : ("@" + Model.Recipient.Username))';
   var typingTimer = null;
 
-  // ── SignalR ──
-  var connection = new signalR.HubConnectionBuilder()
-    .withUrl('/chatHub')
-    .withAutomaticReconnect()
-    .build();
+  // ── Chat handlers (hub global) ──
+  function registerChatHandlers(hub) {
+    hub.on('ReceiveMessage', function (msg) {
+      addMessage(msg);
+      scrollToBottom();
+    });
 
-  connection.on('ReceiveMessage', function (msg) {
-    addMessage(msg);
-    scrollToBottom();
-  });
+    hub.on('MessageEdited', function (messageId, newContent, editedAt) {
+      var el = document.querySelector('.msg-row[data-id="' + messageId + '"]');
+      if (!el) return;
+      var text = el.querySelector('.msg-text');
+      if (text) text.textContent = newContent;
+      var meta = el.querySelector('.msg-meta');
+      if (meta && !meta.querySelector('.msg-edited')) {
+        var span = document.createElement('span');
+        span.className = 'msg-edited';
+        span.textContent = 'editado';
+        meta.insertBefore(span, meta.firstChild);
+      }
+    });
 
-  connection.on('MessageEdited', function (messageId, newContent, editedAt) {
-    var el = document.querySelector('.msg-row[data-id="' + messageId + '"]');
-    if (!el) return;
-    var text = el.querySelector('.msg-text');
-    if (text) text.textContent = newContent;
-    var meta = el.querySelector('.msg-meta');
-    if (meta && !meta.querySelector('.msg-edited')) {
-      var span = document.createElement('span');
-      span.className = 'msg-edited';
-      span.textContent = 'editado';
-      meta.insertBefore(span, meta.firstChild);
+    hub.on('MessageDeleted', function (messageId) {
+      var el = document.querySelector('.msg-row[data-id="' + messageId + '"]');
+      if (!el) return;
+      var actions = el.querySelector('.msg-actions');
+      if (actions) actions.remove();
+      var bubble = el.querySelector('.bubble');
+      if (bubble) {
+        bubble.classList.add('deleted');
+        bubble.innerHTML = '<span class="msg-text">Mensaje eliminado</span><div class="msg-meta"></div>';
+      }
+    });
+
+    hub.on('UserTyping', function (userId, displayName) {
+      if (userId === currentUserId) return;
+      var ind = document.getElementById('typingIndicator');
+      if (ind) ind.textContent = displayName + ' está escribiendo…';
+    });
+
+    hub.on('UserStoppedTyping', function (userId) {
+      if (userId === currentUserId) return;
+      var ind = document.getElementById('typingIndicator');
+      if (ind) ind.textContent = '';
+    });
+  }
+
+  // ── Presencia en el header ──
+  function renderPresence() {
+    var online = !!window.acOnlineUsers[recipientId];
+    var sub = document.getElementById('headerSub');
+    if (sub) sub.textContent = online ? 'en línea' : theirStatus;
+    var dot = document.getElementById('headerDot');
+    if (dot) dot.classList.toggle('online', online);
+  }
+  document.addEventListener('ac:presence', renderPresence);
+
+  // ── Unirse a la conversación cuando el hub esté listo ──
+  function joinConversation() {
+    if (window.acHub) {
+      window.acHub.invoke('JoinConversation', recipientId).catch(function () {});
     }
-  });
+  }
+  document.addEventListener('ac:hubconnected', joinConversation);
 
-  connection.on('MessageDeleted', function (messageId) {
-    var el = document.querySelector('.msg-row[data-id="' + messageId + '"]');
-    if (!el) return;
-    var actions = el.querySelector('.msg-actions');
-    if (actions) actions.remove();
-    var bubble = el.querySelector('.bubble');
-    if (bubble) {
-      bubble.classList.add('deleted');
-      bubble.innerHTML = '<span class="msg-text">Mensaje eliminado</span><div class="msg-meta"></div>';
-    }
-  });
-
-  connection.on('UserTyping', function (userId, displayName) {
-    if (userId === currentUserId) return;
-    var ind = document.getElementById('typingIndicator');
-    if (ind) ind.textContent = displayName + ' está escribiendo…';
-  });
-
-  connection.on('UserStoppedTyping', function (userId) {
-    if (userId === currentUserId) return;
-    var ind = document.getElementById('typingIndicator');
-    if (ind) ind.textContent = '';
-  });
-
-  connection.onreconnecting(function () {
-    console.log('Reconectando…');
-  });
-
-  connection.onreconnected(function () {
-    console.log('Reconectado');
-    connection.invoke('JoinConversation', recipientId);
-  });
-
-  connection.start().then(function () {
-    connection.invoke('JoinConversation', recipientId);
-  }).catch(function (err) {
-    console.error('SignalR error:', err);
-  });
+  if (window.acHub) {
+    registerChatHandlers(window.acHub);
+    if (window.acHub.state === 'Connected') joinConversation();
+  }
 
   // ── Send message ──
   document.getElementById('sendBtn').addEventListener('click', sendMessage);
@@ -275,9 +285,9 @@
 
   document.getElementById('msgInput').addEventListener('input', function () {
     if (typingTimer) clearTimeout(typingTimer);
-    connection.invoke('Typing', recipientId, myName);
+    acInvoke('Typing', recipientId, myName);
     typingTimer = setTimeout(function () {
-      connection.invoke('StopTyping', recipientId);
+      acInvoke('StopTyping', recipientId);
     }, 1200);
   });
 
@@ -286,7 +296,7 @@
     var content = input.value.trim();
     if (!content) return;
     input.value = '';
-    connection.invoke('SendMessage', recipientId, content);
+    acInvoke('SendMessage', recipientId, content);
   }
 
   // ── Add message to DOM ──
@@ -298,30 +308,30 @@
     var isMine = msg.senderId === currentUserId;
     var side = isMine ? 'mine' : 'theirs';
 
-    // Date divider
-    var today = new Date(msg.createdAt);
-    var dateKey = today.toISOString().slice(0, 10);
+    // Date divider (hora local, igual que el servidor)
+    var created = new Date(msg.createdAt);
+    var dateKey = localDateKey(created);
     var lastDivider = area.querySelector('.date-divider:last-child');
     if (!lastDivider || lastDivider.getAttribute('data-date') !== dateKey) {
       var d = document.createElement('div');
       d.className = 'date-divider';
       d.setAttribute('data-date', dateKey);
-      d.textContent = today.toLocaleDateString('es-GT', { day: 'numeric', month: 'long' });
+      d.textContent = created.toLocaleDateString('es-GT', { day: 'numeric', month: 'long' });
       area.appendChild(d);
     }
 
     var avatarHtml = '';
     if (!isMine) {
-      var aSrc = myAvatar || '';
+      var aSrc = theirAvatar || '';
       if (aSrc) {
         avatarHtml = '<a href="/Profile/Index/' + msg.senderId + '"><img src="' + aSrc + '" class="avatar avatar-sm" alt=""/></a>';
       } else {
-        avatarHtml = '<a href="/Profile/Index/' + msg.senderId + '"><span class="avatar avatar-sm" style="background:' + msg.senderColor + '">' + msg.senderName[0] + '</span></a>';
+        avatarHtml = '<a href="/Profile/Index/' + msg.senderId + '"><span class="avatar avatar-sm" style="background:' + msg.senderColor + '">' + (msg.senderName || '?')[0] + '</span></a>';
       }
     }
 
     var innerHtml = '';
-    switch (msg.type) {
+    switch (normalizeType(msg.type)) {
       case 0: // Text
         innerHtml = '<span class="msg-text">' + htmlEncode(msg.content) + '</span>';
         break;
@@ -360,13 +370,13 @@
     var mid = document.getElementById('editMsgId').value;
     var content = document.getElementById('editContent').value.trim();
     if (!content) return;
-    connection.invoke('EditMessage', mid, recipientId, content);
+    acInvoke('EditMessage', mid, recipientId, content);
     closeModal('editModal');
   }
 
   function submitDelete() {
     var mid = document.getElementById('deleteMsgId').value;
-    connection.invoke('DeleteMessage', mid, recipientId);
+    acInvoke('DeleteMessage', mid, recipientId);
     closeModal('deleteModal');
   }
 
@@ -386,60 +396,29 @@
     return String(dt.getHours()).padStart(2,'0') + ':' + String(dt.getMinutes()).padStart(2,'0');
   }
 
+  function localDateKey(d) {
+    return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0');
+  }
+
+  function normalizeType(t) {
+    if (typeof t === 'number') return t;
+    switch (String(t).toLowerCase()) {
+      case 'text': return 0;
+      case 'image': return 1;
+      case 'audio': return 2;
+      default: return 3;
+    }
+  }
+
   function scrollToBottom() {
     var msgs = document.getElementById('messages');
     if (msgs) msgs.scrollTop = msgs.scrollHeight;
   }
 
-  // ── Sidebar mobile ──
-  function openSidebar() {
-    document.getElementById('sidebar').classList.add('open');
-    document.getElementById('sidebarOverlay').classList.add('open');
-  }
-  function closeSidebar() {
-    document.getElementById('sidebar').classList.remove('open');
-    document.getElementById('sidebarOverlay').classList.remove('open');
-  }
-
   // ── Attach ──
   function toggleAttach() { document.getElementById('attachPanel').classList.toggle('open'); }
 
-  // ── Modals ──
-  function openModal(id) { document.getElementById(id).classList.add('open'); }
-  function closeModal(id) { document.getElementById(id).classList.remove('open'); }
-
-  function openEdit(id, content) {
-    document.getElementById('editMsgId').value = id;
-    document.getElementById('editContent').value = content;
-    openModal('editModal');
-  }
-  function confirmDelete(msgId) {
-    document.getElementById('deleteMsgId').value = msgId;
-    openModal('deleteModal');
-  }
-
-  // ── Lightbox ──
-  function openLightbox(img) {
-    document.getElementById('lightboxImg').src = img.src;
-    document.getElementById('lightbox').classList.add('open');
-  }
-  function closeLightbox() { document.getElementById('lightbox').classList.remove('open'); }
-
-  // Close modal on overlay click
-  document.querySelectorAll('.modal-overlay').forEach(function(el) {
-    el.addEventListener('click', function(e) { if (e.target === el) el.classList.remove('open'); });
-  });
-
   // Scroll to bottom on load
   scrollToBottom();
-
-  // Sync theme pills
-  (function() {
-    var t = localStorage.getItem('ac-theme') || 'dark';
-    if (t === 'light') {
-      document.querySelector('.theme-pill-dark')?.classList.remove('active');
-      document.querySelector('.theme-pill-light')?.classList.add('active');
-    }
-  })();
 </script>
 }

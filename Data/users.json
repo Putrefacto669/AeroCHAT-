@@ -8,7 +8,9 @@
     "AvatarPath": "/uploads/avatars/9ad5c984-fe2d-48d2-8516-cbad5b87ec59.jpg",
     "BannerPath": null,
     "Status": "Admin 1",
-    "YoutubeSongUrl": "https://youtu.be/3SoL8zaMS1k?si=1e5ifmfmLKrzNdxu"
+    "YoutubeSongUrl": "https://youtu.be/3SoL8zaMS1k?si=1e5ifmfmLKrzNdxu",
+    "FriendIds": [],
+    "FriendRequests": []
   },
   {
     "Id": "2",
@@ -19,7 +21,9 @@
     "AvatarPath": null,
     "BannerPath": null,
     "Status": null,
-    "YoutubeSongUrl": null
+    "YoutubeSongUrl": null,
+    "FriendIds": [],
+    "FriendRequests": []
   },
   {
     "Id": "3",
@@ -30,7 +34,9 @@
     "AvatarPath": "/uploads/avatars/d2eadfd3-b584-4cf0-bbab-365635232944.jpg",
     "BannerPath": null,
     "Status": "Disponible \u2600",
-    "YoutubeSongUrl": null
+    "YoutubeSongUrl": null,
+    "FriendIds": [],
+    "FriendRequests": []
   },
   {
     "Id": "4",
@@ -41,6 +47,8 @@
     "AvatarPath": "/uploads/avatars/0f594491-df37-4d97-893a-1d84a23ad956.jpg",
     "BannerPath": null,
     "Status": "Admin 2",
-    "YoutubeSongUrl": null
+    "YoutubeSongUrl": null,
+    "FriendIds": [],
+    "FriendRequests": []
   }
 ]

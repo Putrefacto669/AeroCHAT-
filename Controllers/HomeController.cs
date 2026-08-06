@@ -10,6 +10,35 @@ public class HomeController : Controller
 
     public HomeController(DataService data) => _data = data;
 
+    private string? CurrentUserId => HttpContext.Session.GetString("UserId");
+
+    [HttpGet]
+    public IActionResult Sidebar()
+    {
+        if (CurrentUserId == null) return Unauthorized();
+        var user = _data.GetUserById(CurrentUserId!);
+        if (user == null) return RedirectToAction("Logout");
+
+        ViewBag.SidebarUser = user;
+        ViewBag.SidebarItems = _data.GetSidebarItems(user.Id);
+        ViewBag.SidebarGroups = _data.GetGroupsForUser(user.Id);
+        ViewBag.SidebarActiveId = null;
+        return PartialView("_Sidebar");
+    }
+
+    [HttpGet]
+    public IActionResult GetFriendsJson()
+    {
+        var uid = CurrentUserId;
+        if (uid == null) return Unauthorized();
+        var friends = _data.GetFriendIds(uid)
+            .Select(id => _data.GetUserById(id))
+            .Where(u => u != null)
+            .Select(u => new { id = u!.Id, displayName = u.DisplayName, avatarColor = u.AvatarColor, avatarPath = u.AvatarPath })
+            .ToList();
+        return Json(friends);
+    }
+
     public IActionResult Index()
     {
         if (HttpContext.Session.GetString("UserId") != null)

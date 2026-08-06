@@ -88,5 +88,20 @@
     "CreatedAt": "2026-07-02T10:57:47.4910902-06:00",
     "EditedAt": null,
     "IsDeleted": false
+  },
+  {
+    "Id": "f1befc9d-b14e-4a1d-89b0-8db1f5b88e81",
+    "SenderId": "1",
+    "SenderName": "Josu\u00E9",
+    "SenderColor": "#6C63FF",
+    "ReceiverId": "2",
+    "Content": "Que me dice",
+    "Type": "Text",
+    "FileName": null,
+    "FilePath": null,
+    "FileSize": null,
+    "CreatedAt": "2026-08-04T16:25:51.5853625Z",
+    "EditedAt": null,
+    "IsDeleted": false
   }
 ]

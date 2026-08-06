@@ -11,6 +11,27 @@ public class User
     public string? BannerPath { get; set; }
     public string? Status { get; set; }
     public string? YoutubeSongUrl { get; set; }
+    public List<string> FriendIds { get; set; } = new();
+    public List<FriendRequest> FriendRequests { get; set; } = new();
+}
+
+public class FriendRequest
+{
+    public string Id { get; set; } = Guid.NewGuid().ToString();
+    public string FromUserId { get; set; } = "";
+    public string ToUserId { get; set; } = "";
+    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+}
+
+public enum FriendState { None, Friends, Outgoing, Incoming }
+
+public enum FriendRequestResult { Sent, Pending, AlreadyFriends, NotFound, Self }
+
+public class SidebarUserItem
+{
+    public User User { get; set; } = new();
+    public string State { get; set; } = "none";
+    public string RequestId { get; set; } = "";
 }
 
 public class Message
@@ -31,6 +52,32 @@ public class Message
 }
 
 public enum MessageType { Text, Image, Audio, Document }
+
+public class Group
+{
+    public string Id { get; set; } = Guid.NewGuid().ToString();
+    public string Name { get; set; } = "";
+    public string OwnerId { get; set; } = "";
+    public List<string> MemberIds { get; set; } = new();
+    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+}
+
+public class GroupViewModel
+{
+    public Group Group { get; set; } = new();
+    public User CurrentUser { get; set; } = new();
+    public List<User> Members { get; set; } = new();
+    public List<Message> Messages { get; set; } = new();
+}
+
+public class CallMessage
+{
+    public string Type { get; set; } = "";
+    public string? Sdp { get; set; }
+    public string? Candidate { get; set; }
+    public string? SdpMid { get; set; }
+    public int? SdpMLineIndex { get; set; }
+}
 
 public class LoginViewModel
 {
@@ -70,5 +117,8 @@ public class ProfileViewModel
     public User ProfileUser { get; set; } = new();
     public User CurrentUser { get; set; } = new();
     public List<User> AllUsers { get; set; } = new();
+    public List<User> Friends { get; set; } = new();
+    public string FriendState { get; set; } = "none";
+    public string? RequestId { get; set; }
     public string? YoutubeEmbedId { get; set; }
 }

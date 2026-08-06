@@ -1,0 +1,320 @@
+@model GroupViewModel
+@{
+  ViewData["Title"] = "Grupo — " + Model.Group.Name;
+  var groupColor = $"#{Math.Abs(Model.Group.Name.GetHashCode()) % 0xFFFFFF:X6}";
+  var c = System.Globalization.CultureInfo.GetCultureInfo("es-GT");
+}
+
+<div class="app-shell">
+  @await Html.PartialAsync("_Sidebar")
+
+  <div class="chat-main">
+    <div class="chat-header">
+      <button class="hamburger" onclick="openSidebar()" aria-label="Menú">☰</button>
+      <span class="group-avatar group-avatar-lg" style="background:@groupColor">@(Model.Group.Name.Length > 0 ? Model.Group.Name[0].ToString().ToUpperInvariant() : "?")</span>
+      <div class="chat-header-info">
+        <div class="chat-header-name">@Model.Group.Name</div>
+        <div class="chat-header-sub" id="headerSub">
+          <span id="memberCount">@Model.Members.Count miembros</span> · <span id="onlineCount">0</span> en línea
+        </div>
+      </div>
+      <button class="btn btn-ghost btn-leave-group" onclick="leaveGroup('@Model.Group.Id')">Salir</button>
+    </div>
+
+    <div class="members-strip" id="membersStrip">
+      @foreach (var m in Model.Members)
+      {
+        <a href="/Profile/Index/@m.Id" class="member-chip" title="@m.DisplayName">
+          <span class="avatar-wrap">
+            @if (!string.IsNullOrEmpty(m.AvatarPath))
+            {
+              <img src="@m.AvatarPath" class="avatar avatar-sm" alt=""/>
+            }
+            else
+            {
+              <span class="avatar avatar-sm" style="background:@m.AvatarColor">@m.DisplayName[0]</span>
+            }
+            <span class="presence-dot" data-userid="@m.Id"></span>
+          </span>
+          <span class="member-chip-name">@m.DisplayName</span>
+        </a>
+      }
+    </div>
+
+    @if (TempData["Error"] != null)
+    {
+      <div class="alert-error" style="margin:0 16px 0">@TempData["Error"]</div>
+    }
+
+    <div class="messages-area" id="messages">
+      @if (!Model.Messages.Any())
+      {
+        <div class="no-messages">Todavía no hay mensajes — ¡dale inicio al grupo!</div>
+      }
+
+      @{ string? lastDate = null; }
+      @foreach (var msg in Model.Messages)
+      {
+        lastDate = RenderMessage(msg, Model.CurrentUser, lastDate, c);
+      }
+    </div>
+
+    <div class="input-area">
+      <div class="send-form" id="sendForm">
+        <input type="text" id="msgInput" placeholder="Mensaje al grupo…" autocomplete="off" class="msg-input"/>
+        <button class="icon-btn icon-btn-send" id="sendBtn" title="Enviar">➤</button>
+      </div>
+      <div id="typingIndicator" class="typing-indicator"></div>
+    </div>
+  </div>
+</div>
+
+@functions {
+  string? RenderMessage(Message msg, User me, string? lastDate, System.Globalization.CultureInfo c)
+  {
+    var dateStr = msg.CreatedAt.ToString("dd 'de' MMMM", c);
+    if (dateStr != lastDate)
+    {
+      <div class="date-divider" data-date="@msg.CreatedAt.ToString("yyyy-MM-dd")">@dateStr</div>
+      lastDate = dateStr;
+    }
+
+    var isMine = msg.SenderId == me.Id;
+    var side = isMine ? "mine" : "theirs";
+
+    <div class="msg-row @side" data-id="@msg.Id">
+      <div class="bubble @side @(msg.IsDeleted ? "deleted" : "") text">
+        @if (!isMine)
+        {
+          <span class="msg-sender" style="color:@msg.SenderColor">@msg.SenderName</span>
+        }
+        @if (msg.Type == MessageType.Text)
+        {
+          <span class="msg-text">@msg.Content</span>
+        }
+        <div class="msg-meta">
+          @if (msg.EditedAt.HasValue) { <span class="msg-edited">editado</span> }
+          <span class="msg-time">@msg.CreatedAt.ToString("HH:mm")</span>
+        </div>
+        @if (isMine && !msg.IsDeleted)
+        {
+          <div class="msg-actions">
+            @if (msg.Type == MessageType.Text)
+            {
+              <button class="action-btn" onclick="openEdit('@msg.Id','@JavaScriptEncoder.Default.Encode(msg.Content)')">✏</button>
+            }
+            <button class="action-btn del" onclick="confirmDelete('@msg.Id')">🗑</button>
+          </div>
+        }
+      </div>
+    </div>
+    return lastDate;
+  }
+}
+
+<!-- Edit modal -->
+<div class="modal-overlay" id="editModal">
+  <div class="modal">
+    <h3>Editar mensaje</h3>
+    <div>
+      <input type="hidden" id="editMsgId"/>
+      <textarea id="editContent" class="edit-textarea"></textarea>
+      <div class="modal-actions">
+        <button type="button" class="btn btn-secondary" onclick="closeModal('editModal')">Cancelar</button>
+        <button type="button" class="btn btn-primary" onclick="submitEdit()">Guardar</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Delete modal -->
+<div class="modal-overlay" id="deleteModal">
+  <div class="modal">
+    <h3>Eliminar mensaje</h3>
+    <p>Esta acción no se puede deshacer.</p>
+    <div>
+      <input type="hidden" id="deleteMsgId"/>
+      <div class="modal-actions">
+        <button type="button" class="btn btn-secondary" onclick="closeModal('deleteModal')">Cancelar</button>
+        <button type="button" class="btn btn-danger" onclick="submitDelete()">Eliminar</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+@section Scripts {
+<script>
+  // ── State ──
+  var currentUserId = '@Model.CurrentUser.Id';
+  var groupId = '@Model.Group.Id';
+  var myName = '@JavaScriptEncoder.Default.Encode(Model.CurrentUser.DisplayName)';
+  var typingTimer = null;
+
+  // ── Chat handlers (hub global) ──
+  function registerGroupHandlers(hub) {
+    hub.on('ReceiveGroupMessage', function (msg) {
+      addGroupMessage(msg);
+      scrollToBottom();
+    });
+    hub.on('GroupMessageEdited', function (messageId, newContent, editedAt) {
+      var el = document.querySelector('.msg-row[data-id="' + messageId + '"]');
+      if (!el) return;
+      var text = el.querySelector('.msg-text');
+      if (text) text.textContent = newContent;
+      var meta = el.querySelector('.msg-meta');
+      if (meta && !meta.querySelector('.msg-edited')) {
+        var span = document.createElement('span');
+        span.className = 'msg-edited';
+        span.textContent = 'editado';
+        meta.insertBefore(span, meta.firstChild);
+      }
+    });
+    hub.on('GroupMessageDeleted', function (messageId) {
+      var el = document.querySelector('.msg-row[data-id="' + messageId + '"]');
+      if (!el) return;
+      var actions = el.querySelector('.msg-actions');
+      if (actions) actions.remove();
+      var bubble = el.querySelector('.bubble');
+      if (bubble) {
+        bubble.classList.add('deleted');
+        bubble.innerHTML = '<span class="msg-text">Mensaje eliminado</span><div class="msg-meta"></div>';
+      }
+    });
+    hub.on('GroupUserTyping', function (userId, displayName) {
+      if (userId === currentUserId) return;
+      var ind = document.getElementById('typingIndicator');
+      if (ind) ind.textContent = displayName + ' está escribiendo…';
+    });
+    hub.on('GroupUserStoppedTyping', function (userId) {
+      if (userId === currentUserId) return;
+      var ind = document.getElementById('typingIndicator');
+      if (ind) ind.textContent = '';
+    });
+  }
+
+  // ── Presencia: contador en línea ──
+  function renderOnlineCount() {
+    var strip = document.getElementById('membersStrip');
+    var el = document.getElementById('onlineCount');
+    if (!strip || !el) return;
+    var online = 0;
+    strip.querySelectorAll('.presence-dot').forEach(function (dot) {
+      if (dot.classList.contains('online')) online++;
+    });
+    el.textContent = online;
+  }
+  document.addEventListener('ac:presence', renderOnlineCount);
+
+  // ── Unirse al grupo ──
+  function joinGroup() {
+    if (window.acHub) acInvoke('JoinGroup', groupId);
+  }
+  document.addEventListener('ac:hubconnected', joinGroup);
+  if (window.acHub) {
+    registerGroupHandlers(window.acHub);
+    if (window.acHub.state === 'Connected') joinGroup();
+  }
+
+  // ── Enviar ──
+  document.getElementById('sendBtn').addEventListener('click', sendMessage);
+  document.getElementById('msgInput').addEventListener('keydown', function (e) {
+    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); }
+  });
+  document.getElementById('msgInput').addEventListener('input', function () {
+    if (typingTimer) clearTimeout(typingTimer);
+    acInvoke('GroupTyping', groupId, myName);
+    typingTimer = setTimeout(function () { acInvoke('GroupStopTyping', groupId); }, 1200);
+  });
+
+  function sendMessage() {
+    var input = document.getElementById('msgInput');
+    var content = input.value.trim();
+    if (!content) return;
+    input.value = '';
+    acInvoke('SendGroupMessage', groupId, content);
+  }
+
+  // ── Agregar mensaje al DOM ──
+  function addGroupMessage(msg) {
+    var area = document.getElementById('messages');
+    var noMsg = area.querySelector('.no-messages');
+    if (noMsg) noMsg.remove();
+
+    var isMine = msg.senderId === currentUserId;
+    var side = isMine ? 'mine' : 'theirs';
+
+    var created = new Date(msg.createdAt);
+    var dateKey = localDateKey(created);
+    var lastDivider = area.querySelector('.date-divider:last-child');
+    if (!lastDivider || lastDivider.getAttribute('data-date') !== dateKey) {
+      var d = document.createElement('div');
+      d.className = 'date-divider';
+      d.setAttribute('data-date', dateKey);
+      d.textContent = created.toLocaleDateString('es-GT', { day: 'numeric', month: 'long' });
+      area.appendChild(d);
+    }
+
+    var senderHtml = isMine ? '' : '<span class="msg-sender" style="color:' + msg.senderColor + '">' + htmlEncode(msg.senderName) + '</span>';
+    var actionsHtml = '';
+    if (isMine && !msg.isDeleted) {
+      actionsHtml = '<div class="msg-actions">'
+        + '<button class="action-btn" onclick="openEdit(\'' + msg.id + '\',\'' + jsEncode(msg.content) + '\')">✏</button>'
+        + '<button class="action-btn del" onclick="confirmDelete(\'' + msg.id + '\')">🗑</button></div>';
+    }
+    var metaHtml = '<div class="msg-meta"><span class="msg-time">' + formatTime(msg.createdAt) + '</span></div>';
+
+    var bubble = document.createElement('div');
+    bubble.className = 'bubble ' + side + ' text';
+    bubble.innerHTML = senderHtml + '<span class="msg-text">' + htmlEncode(msg.content) + '</span>' + metaHtml + actionsHtml;
+
+    var row = document.createElement('div');
+    row.className = 'msg-row ' + side;
+    row.setAttribute('data-id', msg.id);
+    row.appendChild(bubble);
+    area.appendChild(row);
+  }
+
+  function submitEdit() {
+    var mid = document.getElementById('editMsgId').value;
+    var content = document.getElementById('editContent').value.trim();
+    if (!content) return;
+    acInvoke('EditGroupMessage', groupId, mid, content);
+    closeModal('editModal');
+  }
+  function submitDelete() {
+    var mid = document.getElementById('deleteMsgId').value;
+    acInvoke('DeleteGroupMessage', groupId, mid);
+    closeModal('deleteModal');
+  }
+
+  function leaveGroup(gid) {
+    if (!confirm('¿Salir del grupo? Dejarás de ver sus mensajes.')) return;
+    acInvoke('LeaveGroup', gid);
+    location.href = '/Chat/Index';
+  }
+
+  // ── Helpers ──
+  function htmlEncode(s) {
+    var d = document.createElement('div');
+    d.textContent = s;
+    return d.innerHTML;
+  }
+  function jsEncode(s) {
+    return s.replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/"/g, '\\"');
+  }
+  function formatTime(d) {
+    var dt = new Date(d);
+    return String(dt.getHours()).padStart(2,'0') + ':' + String(dt.getMinutes()).padStart(2,'0');
+  }
+  function localDateKey(d) {
+    return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0');
+  }
+  function scrollToBottom() {
+    var msgs = document.getElementById('messages');
+    if (msgs) msgs.scrollTop = msgs.scrollHeight;
+  }
+
+  scrollToBottom();
+  renderOnlineCount();
+</script>
+}

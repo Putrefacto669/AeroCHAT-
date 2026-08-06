@@ -1,0 +1,14 @@
+[
+    {
+        "ownerId":  "1",
+        "createdAt":  "2026-08-06T15:47:48.8177893Z",
+        "name":  "Amigos Dev",
+        "id":  "group-seed-1",
+        "memberIds":  [
+                          "1",
+                          "2",
+                          "3",
+                          "4"
+                      ]
+    }
+]

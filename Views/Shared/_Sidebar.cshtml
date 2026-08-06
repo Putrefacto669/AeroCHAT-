@@ -1,8 +1,13 @@
 @{
   var currentUser = ViewBag.SidebarUser as AeroChat.Models.User;
-  var allUsers = ViewBag.SidebarUsers as List<AeroChat.Models.User>;
+  var items = ViewBag.SidebarItems as List<AeroChat.Models.SidebarUserItem>;
+  var groups = (ViewBag.SidebarGroups as List<AeroChat.Models.Group>) ?? new List<AeroChat.Models.Group>();
   var activeId = ViewBag.SidebarActiveId as string;
-  if (currentUser == null || allUsers == null) return;
+  if (currentUser == null || items == null) return;
+  var friends = items.Where(i => i.State == "friends").OrderBy(i => i.User.DisplayName).ToList();
+  var requests = items.Where(i => i.State == "incoming").OrderBy(i => i.User.DisplayName).ToList();
+  var discover = items.Where(i => i.State == "none" || i.State == "outgoing")
+                      .OrderBy(i => i.User.DisplayName).ToList();
 }
 
 <aside class="sidebar" id="sidebar">
@@ -29,32 +34,132 @@
       }
       <div class="sidebar-me-info">
         <div class="sidebar-me-name">@currentUser.DisplayName</div>
-        <div class="sidebar-me-status">@(!string.IsNullOrEmpty(currentUser.Status) ? currentUser.Status : "Mi perfil")</div>
+        <div class="sidebar-me-status">
+          <span class="presence-dot online" data-userid="@currentUser.Id"></span>
+          @(!string.IsNullOrEmpty(currentUser.Status) ? currentUser.Status : "Mi perfil")
+        </div>
       </div>
     </a>
   </div>
 
-  <div class="sidebar-section-label">Mensajes</div>
-  <nav class="user-list">
-    @foreach (var u in allUsers)
+  @if (requests.Any())
+  {
+    <div class="sidebar-section-label">
+      Solicitudes <span class="badge" id="requestBadge">@requests.Count</span>
+    </div>
+    <div class="user-list sidebar-list" id="requestList">
+      @foreach (var r in requests)
+      {
+        <div class="req-item" data-req-from="@r.User.Id">
+          @if (!string.IsNullOrEmpty(r.User.AvatarPath))
+          {
+            <img src="@r.User.AvatarPath" class="avatar avatar-md" alt=""/>
+          }
+          else
+          {
+            <span class="avatar avatar-md" style="background:@r.User.AvatarColor">@r.User.DisplayName[0]</span>
+          }
+          <div class="user-item-info">
+            <span class="user-item-name">@r.User.DisplayName</span>
+            <span class="user-item-sub">Quiere ser tu amigo</span>
+          </div>
+          <div class="req-actions">
+            <button class="mini-btn mini-accept" title="Aceptar" onclick="acceptRequest('@r.User.Id','@r.RequestId',this)">✓</button>
+            <button class="mini-btn mini-decline" title="Rechazar" onclick="declineRequest('@r.User.Id','@r.RequestId',this)">✕</button>
+          </div>
+        </div>
+      }
+    </div>
+  }
+
+  <div class="sidebar-section-label">
+    Amigos <span class="count" id="friendCount">@friends.Count</span>
+  </div>
+  <div class="user-list sidebar-list" id="friendList">
+    @if (!friends.Any())
     {
-      var cls = u.Id == activeId ? "user-item active" : "user-item";
-      <a href="/Chat/Conversation/@u.Id" class="@cls">
-        @if (!string.IsNullOrEmpty(u.AvatarPath))
+      <div class="sidebar-empty">Todavía no tenés amigos.<br/>Agregá contactos con el botón ＋.</div>
+    }
+    @foreach (var f in friends)
+    {
+      var cls = f.User.Id == activeId ? "user-item active" : "user-item";
+      <a href="/Chat/Conversation/@f.User.Id" class="@cls">
+        @if (!string.IsNullOrEmpty(f.User.AvatarPath))
         {
-          <img src="@u.AvatarPath" class="avatar avatar-md" alt=""/>
+          <span class="avatar-wrap">
+            <img src="@f.User.AvatarPath" class="avatar avatar-md" alt=""/>
+            <span class="presence-dot" data-userid="@f.User.Id"></span>
+          </span>
         }
         else
         {
-          <span class="avatar avatar-md" style="background:@u.AvatarColor">@u.DisplayName[0]</span>
+          <span class="avatar-wrap">
+            <span class="avatar avatar-md" style="background:@f.User.AvatarColor">@f.User.DisplayName[0]</span>
+            <span class="presence-dot" data-userid="@f.User.Id"></span>
+          </span>
         }
         <div class="user-item-info">
-          <span class="user-item-name">@u.DisplayName</span>
-          <span class="user-item-sub">@(!string.IsNullOrEmpty(u.Status) ? u.Status : $"@{u.Username}")</span>
+          <span class="user-item-name">@f.User.DisplayName</span>
+          <span class="user-item-sub">@(!string.IsNullOrEmpty(f.User.Status) ? f.User.Status : $"@{f.User.Username}")</span>
         </div>
       </a>
     }
-  </nav>
+  </div>
+
+  <div class="sidebar-section-label">
+    Grupos
+    <button class="mini-btn mini-add mini-add-group" title="Nuevo grupo" onclick="openNewGroup()">＋</button>
+  </div>
+  <div class="user-list sidebar-list" id="groupList">
+    @if (!groups.Any())
+    {
+      <div class="sidebar-empty">Todavía no hay grupos.<br/>Creá uno con tus amigos.</div>
+    }
+    @foreach (var g in groups)
+    {
+      var color = $"#{Math.Abs(g.Name.GetHashCode()) % 0xFFFFFF:X6}";
+      var gCls = activeId == $"/Group/Conversation/{g.Id}" ? "user-item active" : "user-item";
+      <a href="/Group/Conversation/@g.Id" class="@gCls">
+        <span class="group-avatar" style="background:@color">@(g.Name.Length > 0 ? g.Name[0].ToString().ToUpperInvariant() : "?")</span>
+        <div class="user-item-info">
+          <span class="user-item-name">@g.Name</span>
+          <span class="user-item-sub">@g.MemberIds.Count @(g.MemberIds.Count == 1 ? "miembro" : "miembros")</span>
+        </div>
+      </a>
+    }
+  </div>
+
+  @if (discover.Any())
+  {
+    <div class="sidebar-section-label">Descubrir</div>
+    <div class="user-list sidebar-list">
+      @foreach (var d in discover)
+      {
+        <a href="/Chat/Conversation/@d.User.Id" class="user-item">
+          @if (!string.IsNullOrEmpty(d.User.AvatarPath))
+          {
+            <img src="@d.User.AvatarPath" class="avatar avatar-md" alt=""/>
+          }
+          else
+          {
+            <span class="avatar avatar-md" style="background:@d.User.AvatarColor">@d.User.DisplayName[0]</span>
+          }
+          <div class="user-item-info">
+            <span class="user-item-name">@d.User.DisplayName</span>
+            <span class="user-item-sub">@(!string.IsNullOrEmpty(d.User.Status) ? d.User.Status : $"@{d.User.Username}")</span>
+          </div>
+          @if (d.State == "outgoing")
+          {
+            <span class="mini-btn pending" title="Solicitud enviada" onclick="event.preventDefault()">⏳</span>
+          }
+          else
+          {
+            <span class="mini-btn mini-add" title="Agregar amigo" onclick="event.preventDefault();sendFriendRequest('@d.User.Id')">＋</span>
+          }
+        </a>
+      }
+    </div>
+  }
 
   <div class="sidebar-footer">
     <a href="/Home/Logout" class="btn-logout">
@@ -63,3 +168,22 @@
   </div>
 </aside>
 <div class="sidebar-overlay" id="sidebarOverlay" onclick="closeSidebar()"></div>
+
+<!-- Nuevo grupo modal -->
+<div class="modal-overlay" id="newGroupModal">
+  <div class="modal">
+    <h3>Nuevo grupo</h3>
+    <div class="field">
+      <label for="newGroupName">Nombre del grupo</label>
+      <input type="text" id="newGroupName" maxlength="40" placeholder="Ej: Salida de viernes"/>
+    </div>
+    <div class="field">
+      <label>Amigos</label>
+      <div class="group-pick-list" id="newGroupMembers"></div>
+    </div>
+    <div class="modal-actions">
+      <button type="button" class="btn btn-secondary" onclick="closeModal('newGroupModal')">Cancelar</button>
+      <button type="button" class="btn btn-primary" onclick="createGroup()">Crear grupo</button>
+    </div>
+  </div>
+</div>

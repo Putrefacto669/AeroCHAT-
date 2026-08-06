@@ -672,3 +672,195 @@ audio { width: 200px; height: 32px; margin-top: 4px; border-radius: 8px; }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
 }
+
+/* ═══════════════════════════════════════════════════════
+   FRIENDS & PRESENCE
+═══════════════════════════════════════════════════════ */
+
+/* Presence dots */
+.presence-dot {
+  display: inline-block; width: 8px; height: 8px; border-radius: 50%;
+  background: var(--text-3); flex-shrink: 0; vertical-align: middle;
+  transition: background var(--transition);
+}
+.presence-dot.online {
+  background: var(--accent2);
+  animation: pulse 2s infinite;
+}
+@keyframes pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(48,209,88,0.35); }
+  50% { box-shadow: 0 0 0 5px rgba(48,209,88,0); }
+}
+.sidebar-me .presence-dot { margin-right: 5px; }
+.chat-header-name .presence-dot { width: 10px; height: 10px; margin-left: 6px; }
+.profile-name .presence-dot { width: 12px; height: 12px; margin-left: 8px; }
+
+.avatar-wrap { position: relative; display: inline-flex; flex-shrink: 0; }
+.avatar-wrap .presence-dot {
+  position: absolute; right: -3px; bottom: -3px;
+  width: 11px; height: 11px; border: 2px solid var(--sidebar-bg);
+}
+
+/* Badges & section labels */
+.sidebar-section-label { display: flex; align-items: center; }
+.badge {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-width: 20px; height: 20px; padding: 0 6px; margin-left: auto;
+  background: var(--accent); color: #fff; border-radius: 50px;
+  font-size: .7rem; font-weight: 700;
+}
+.count { color: var(--text-3); font-size: .72rem; font-weight: 700; margin-left: 6px; }
+
+/* Sidebar list blocks */
+.sidebar-list { flex: none; max-height: 240px; }
+.sidebar-empty {
+  padding: 12px 14px; color: var(--text-3); font-size: .8rem;
+  line-height: 1.5; text-align: center;
+}
+
+/* Request items */
+.req-item {
+  display: flex; align-items: center; gap: 10px;
+  padding: 8px 10px; border-radius: var(--radius-sm);
+  transition: background var(--transition); margin-bottom: 2px;
+}
+.req-item:hover { background: var(--surface2); }
+.req-actions { display: flex; gap: 6px; flex-shrink: 0; }
+
+.mini-btn {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 26px; height: 26px; border-radius: 50%;
+  border: 1px solid var(--border); background: var(--surface2);
+  color: var(--text-2); cursor: pointer; font-size: .78rem;
+  transition: all var(--transition); text-decoration: none; flex-shrink: 0;
+}
+.mini-btn:hover { transform: scale(1.08); }
+.mini-btn:disabled { opacity: .5; cursor: default; transform: none; }
+.mini-accept { color: var(--accent2); }
+.mini-accept:hover { background: var(--accent2); border-color: var(--accent2); color: #fff; }
+.mini-decline { color: var(--danger); }
+.mini-decline:hover { background: var(--danger); border-color: var(--danger); color: #fff; }
+.mini-add { color: var(--accent); }
+.mini-add:hover { background: var(--accent); border-color: var(--accent); color: #fff; }
+.mini-btn.pending { cursor: default; opacity: .7; }
+
+/* Toast */
+.toast {
+  position: fixed; left: 50%; bottom: 28px; transform: translate(-50%, 20px);
+  background: var(--surface); color: var(--text);
+  border: 1px solid var(--border); border-radius: 50px;
+  padding: 10px 20px; font-size: .86rem; font-weight: 500;
+  box-shadow: var(--shadow); z-index: 300; opacity: 0;
+  pointer-events: none; transition: all .25s ease; max-width: 90vw;
+  text-align: center;
+}
+.toast.show { opacity: 1; transform: translate(-50%, 0); }
+.toast-success { border-color: rgba(48,209,88,.5); }
+.toast-info { border-color: rgba(10,132,255,.5); }
+
+/* Profile friend actions */
+.profile-btns { display: flex; gap: 8px; flex-wrap: wrap; }
+.profile-btns .btn:disabled { opacity: .6; cursor: default; }
+
+/* Online label on profile */
+.online-label { font-size: .78rem; color: var(--text-3); }
+.online-label.online { color: var(--accent2); font-weight: 600; }
+
+/* Friends grid */
+.friends-grid {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(84px, 1fr));
+  gap: 12px;
+}
+.friend-card {
+  display: flex; flex-direction: column; align-items: center; gap: 8px;
+  padding: 14px 8px 10px; border-radius: var(--radius-sm);
+  background: var(--surface2); border: 1px solid var(--border);
+  text-decoration: none; color: var(--text); transition: all var(--transition);
+}
+.friend-card:hover {
+  border-color: var(--accent); background: var(--accent-soft);
+  transform: translateY(-2px);
+}
+.friend-card-name {
+  font-size: .72rem; font-weight: 600; max-width: 100%;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+
+/* ── Groups ── */
+.group-avatar {
+  width: 34px; height: 34px; border-radius: 50%; flex-shrink: 0;
+  display: inline-flex; align-items: center; justify-content: center;
+  color: #fff; font-weight: 700; font-size: .85rem;
+}
+.group-avatar-lg { width: 40px; height: 40px; font-size: 1rem; }
+.sidebar-section-label .mini-add {
+  margin-left: auto; width: 20px; height: 20px; font-size: .85rem;
+  border-radius: 50%; background: var(--surface2); border: 1px solid var(--border);
+  color: var(--text-2); cursor: pointer; line-height: 1; display: inline-flex;
+  align-items: center; justify-content: center;
+}
+.sidebar-section-label .mini-add:hover { color: var(--accent); border-color: var(--accent); }
+.sidebar-empty { font-size: .75rem; color: var(--text-3); padding: 4px 8px 10px; line-height: 1.4; }
+
+.group-pick-list { max-height: 220px; overflow-y: auto; display: flex; flex-direction: column; gap: 4px; }
+.group-pick-item {
+  display: flex; align-items: center; gap: 10px; padding: 6px 8px;
+  border-radius: var(--radius-sm); cursor: pointer; transition: background var(--transition);
+}
+.group-pick-item:hover { background: var(--surface2); }
+.group-pick-item input { accent-color: var(--accent); }
+.group-pick-name { font-size: .88rem; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.members-strip {
+  display: flex; gap: 6px; overflow-x: auto; padding: 8px 14px;
+  border-bottom: 1px solid var(--border); background: var(--surface);
+}
+.member-chip {
+  display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px;
+  border-radius: 999px; background: var(--surface2); border: 1px solid var(--border);
+  text-decoration: none; color: var(--text); font-size: .78rem; white-space: nowrap;
+  transition: border-color var(--transition);
+}
+.member-chip:hover { border-color: var(--accent); }
+.member-chip-name { max-width: 110px; overflow: hidden; text-overflow: ellipsis; }
+
+.msg-sender {
+  display: block; font-size: .72rem; font-weight: 700; margin-bottom: 3px;
+}
+.btn-leave-group { align-self: center; margin-left: auto; }
+.icon-btn-call { background: var(--surface2); color: var(--text-2); }
+.icon-btn-call:hover { background: var(--accent); color: #fff; }
+
+/* ── Call overlay ── */
+.call-overlay {
+  display: none; position: fixed; inset: 0; z-index: 1000;
+  align-items: center; justify-content: center;
+  background: rgba(0,0,0,.7); backdrop-filter: blur(6px);
+  opacity: 0; transition: opacity .25s;
+}
+.call-overlay.show { display: flex; opacity: 1; }
+.call-box {
+  background: var(--surface); border: 1px solid var(--border); border-radius: 20px;
+  padding: 34px 44px; text-align: center; min-width: 260px;
+  box-shadow: 0 18px 60px rgba(0,0,0,.45);
+}
+.call-avatar {
+  width: 92px; height: 92px; border-radius: 50%; display: inline-flex;
+  align-items: center; justify-content: center; color: #fff;
+  font-size: 2.2rem; font-weight: 700; margin-bottom: 14px;
+}
+.call-name { font-size: 1.2rem; font-weight: 700; margin-bottom: 4px; }
+.call-state { font-size: .9rem; color: var(--text-2); min-height: 1.2em; }
+.call-timer { font-size: .82rem; color: var(--accent2); font-variant-numeric: tabular-nums; margin-top: 4px; }
+.call-actions { display: flex; justify-content: center; gap: 18px; margin-top: 26px; }
+.call-btn {
+  width: 54px; height: 54px; border-radius: 50%; border: none; font-size: 1.25rem;
+  cursor: pointer; transition: transform var(--transition), background var(--transition);
+}
+.call-btn:active { transform: scale(.94); }
+.call-mute { background: var(--surface2); border: 1px solid var(--border); }
+.call-mute:hover { background: var(--border); }
+.call-mute.muted { background: var(--danger); color: #fff; }
+.call-hangup { background: var(--danger); color: #fff; }
+.call-hangup:hover { filter: brightness(1.1); }
+

@@ -9,7 +9,28 @@
   <link rel="stylesheet" href="~/css/site.css"/>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/microsoft-signalr/8.0.0/signalr.min.js"></script>
 </head>
-<body>
+@{
+  var acUser = ViewBag.SidebarUser as AeroChat.Models.User;
+}
+<body data-userid="@(acUser?.Id ?? "")" data-name="@(acUser?.DisplayName ?? "")">
+<div id="acToast" class="toast" role="status" aria-live="polite"></div>
+
+<!-- Llamada overlay -->
+<div id="callOverlay" class="call-overlay" hidden>
+  <div class="call-box">
+    <div class="call-info">
+      <span class="call-avatar" id="callAvatar"></span>
+      <div class="call-name" id="callName"></div>
+      <div class="call-state" id="callState">Llamando…</div>
+      <div class="call-timer" id="callTimer" hidden>00:00</div>
+    </div>
+    <div class="call-actions">
+      <button class="call-btn call-mute" id="callMute" onclick="toggleMute()">🎙</button>
+      <button class="call-btn call-hangup" onclick="hangupCall()">📵</button>
+    </div>
+  </div>
+</div>
+
 @RenderBody()
 <script>
   // Persist theme
