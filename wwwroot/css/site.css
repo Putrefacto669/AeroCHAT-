@@ -863,4 +863,12 @@ audio { width: 200px; height: 32px; margin-top: 4px; border-radius: 8px; }
 .call-mute.muted { background: var(--danger); color: #fff; }
 .call-hangup { background: var(--danger); color: #fff; }
 .call-hangup:hover { filter: brightness(1.1); }
+.call-accept { background: var(--accent2); color: #fff; }
+.call-accept:hover { filter: brightness(1.1); }
+.call-reject { background: var(--danger); color: #fff; }
+.call-reject:hover { filter: brightness(1.1); }
+.call-overlay.incoming .call-mute,
+.call-overlay.incoming .call-hangup { display: none; }
+.call-overlay:not(.incoming) .call-accept,
+.call-overlay:not(.incoming) .call-reject { display: none; }
 

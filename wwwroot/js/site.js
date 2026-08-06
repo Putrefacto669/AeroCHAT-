@@ -308,6 +308,12 @@ const AC_RTC_CONFIG = { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] }
 
 function setCallUi(state) { document.getElementById('callState').textContent = state; }
 function setCallTimer(show) { document.getElementById('callTimer').hidden = !show; }
+function updateCallButtons() {
+  var ov = document.getElementById('callOverlay');
+  if (!ov) return;
+  ov.classList.toggle('incoming', window.acCall.mode === 'incoming');
+}
+function declineIncoming() { hangupCall(); }
 function showCallOverlay() {
   var ov = document.getElementById('callOverlay');
   ov.hidden = false;
@@ -402,6 +408,7 @@ function cleanupCall() {
   document.getElementById('callMute').classList.remove('muted');
   document.getElementById('callMute').textContent = '🎙';
   setCallTimer(false);
+  updateCallButtons();
   hideCallOverlay();
 }
 
@@ -438,6 +445,7 @@ function callFriend(peerId, name, avatar, color) {
   }
   setupCallDisplay(peerId, name, avatar, color, 'Llamando…');
   window.acCall.mode = 'outgoing';
+  updateCallButtons();
   window.acCall.outgoingTimer = setTimeout(function() {
     if (window.acCall.mode === 'outgoing') endCall('La persona no respondió.');
   }, 30000);
@@ -465,6 +473,7 @@ function callFriend(peerId, name, avatar, color) {
 function acceptIncoming() {
   if (!window.acCall.pendingOffer) return;
   window.acCall.mode = 'active';
+  updateCallButtons();
   setCallUi('En llamada');
   setCallTimer(true);
   stopRingtone();
@@ -502,6 +511,7 @@ function registerCallHandlers(hub) {
       setupCallDisplay(from, payload.fromName, payload.fromAvatar, payload.fromColor, 'Llamada entrante…');
       window.acCall.pendingOffer = msg;
       window.acCall.mode = 'incoming';
+      updateCallButtons();
       startRingtone();
       showToast(payload.fromName + ' te está llamando.', 'info');
       return;
