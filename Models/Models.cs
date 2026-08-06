@@ -51,7 +51,7 @@ public class Message
     public bool IsDeleted { get; set; } = false;
 }
 
-public enum MessageType { Text, Image, Audio, Document }
+public enum MessageType { Text, Image, Audio, Document, Video }
 
 public class Group
 {

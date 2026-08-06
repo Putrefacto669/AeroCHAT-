@@ -12,6 +12,7 @@ public class ChatController : Controller
     private readonly IWebHostEnvironment _env;
     private readonly IHubContext<ChatHub> _hub;
     private const long MaxFileSize = 20 * 1024 * 1024;
+    private const long MaxVideoSize = 100 * 1024 * 1024;
 
     public ChatController(DataService data, IWebHostEnvironment env, IHubContext<ChatHub> hub)
     {
@@ -65,6 +66,8 @@ public class ChatController : Controller
     }
 
     [HttpPost]
+    [RequestSizeLimit(128 * 1024 * 1024)]
+    [RequestFormLimits(MultipartBodyLengthLimit = 128 * 1024 * 1024)]
     public async Task<IActionResult> SendFile(string receiverId, IFormFile file)
     {
         var a = Auth(); if (a != null) return a;
@@ -72,16 +75,26 @@ public class ChatController : Controller
         if (sender == null || file == null || file.Length == 0)
             return RedirectToAction("Conversation", new { id = receiverId });
 
-        if (file.Length > MaxFileSize)
-        {
-            TempData["Error"] = "El archivo supera el límite de 20 MB.";
-            return RedirectToAction("Conversation", new { id = receiverId });
-        }
-
         var ext = Path.GetExtension(file.FileName).ToLower();
         if (string.IsNullOrEmpty(ext)) ext = ".file";
         var type = GetMessageType(ext);
-        var folder = type switch { MessageType.Image => "images", MessageType.Audio => "audios", _ => "documents" };
+
+        var limit = type == MessageType.Video ? MaxVideoSize : MaxFileSize;
+        if (file.Length > limit)
+        {
+            TempData["Error"] = type == MessageType.Video
+                ? "El video supera el límite de 100 MB."
+                : "El archivo supera el límite de 20 MB.";
+            return RedirectToAction("Conversation", new { id = receiverId });
+        }
+
+        var folder = type switch
+        {
+            MessageType.Image => "images",
+            MessageType.Audio => "audios",
+            MessageType.Video => "videos",
+            _ => "documents"
+        };
         var dir = Path.Combine(_env.WebRootPath, "uploads", folder);
         Directory.CreateDirectory(dir);
         var safeName = $"{Guid.NewGuid()}{ext}";
@@ -108,6 +121,7 @@ public class ChatController : Controller
     {
         ".jpg" or ".jpeg" or ".png" or ".gif" or ".webp" => MessageType.Image,
         ".mp3" or ".ogg" or ".wav" or ".m4a" or ".aac" => MessageType.Audio,
+        ".mp4" or ".webm" or ".ogv" or ".mov" or ".mkv" or ".avi" => MessageType.Video,
         _ => MessageType.Document
     };
 }

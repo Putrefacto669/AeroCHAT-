@@ -396,6 +396,11 @@ img.avatar { object-fit: cover; }
 .file-download { font-size: .78rem; color: var(--accent); text-decoration: none; font-weight: 600; }
 .file-download:hover { text-decoration: underline; }
 audio { width: 200px; height: 32px; margin-top: 4px; border-radius: 8px; }
+.msg-video video {
+  width: 100%; max-width: 320px; max-height: 320px;
+  border-radius: 10px; background: #000; display: block; margin-bottom: 4px;
+}
+.msg-video { min-width: 200px; }
 
 /* ── Typing indicator ───────────────────────────────── */
 .typing-indicator {
@@ -667,6 +672,8 @@ audio { width: 200px; height: 32px; margin-top: 4px; border-radius: 8px; }
   audio { width: 140px; }
   .msg-audio { min-width: 140px; }
   .msg-doc { min-width: 140px; }
+  .msg-video video { max-width: 200px; max-height: 200px; }
+  .msg-video { min-width: 140px; }
 }
 
 @media (prefers-reduced-motion: reduce) {

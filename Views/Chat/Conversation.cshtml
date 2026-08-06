@@ -65,6 +65,10 @@
           </form>
           <form method="post" action="/Chat/SendFile" enctype="multipart/form-data">
             <input type="hidden" name="receiverId" value="@Model.Recipient.Id"/>
+            <label class="attach-opt">🎬 Video<input type="file" name="file" accept="video/*" onchange="this.form.submit()"/></label>
+          </form>
+          <form method="post" action="/Chat/SendFile" enctype="multipart/form-data">
+            <input type="hidden" name="receiverId" value="@Model.Recipient.Id"/>
             <label class="attach-opt">📄 Documento<input type="file" name="file" accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.zip" onchange="this.form.submit()"/></label>
           </form>
         </div>
@@ -123,6 +127,13 @@
           <div class="msg-audio">
             <span class="file-icon">🎵</span>
             <div><div class="file-name">@msg.FileName</div><audio controls src="@msg.FilePath"></audio></div>
+          </div>
+        }
+        else if (msg.Type == MessageType.Video)
+        {
+          <div class="msg-video">
+            <video controls preload="metadata" src="@msg.FilePath"></video>
+            <div class="file-name">@msg.FileName</div>
           </div>
         }
         else
@@ -341,6 +352,9 @@
       case 2: // Audio
         innerHtml = '<div class="msg-audio"><span class="file-icon">🎵</span><div><div class="file-name">' + htmlEncode(msg.fileName) + '</div><audio controls src="' + msg.filePath + '"></audio></div></div>';
         break;
+      case 4: // Video
+        innerHtml = '<div class="msg-video"><video controls preload="metadata" src="' + msg.filePath + '"></video><div class="file-name">' + htmlEncode(msg.fileName) + '</div></div>';
+        break;
       default: // Document
         innerHtml = '<div class="msg-doc"><span class="file-icon">📄</span><div><div class="file-name">' + htmlEncode(msg.fileName) + '</div><a href="' + msg.filePath + '" download="' + htmlEncode(msg.fileName) + '" class="file-download">Descargar</a></div></div>';
         break;
@@ -406,6 +420,7 @@
       case 'text': return 0;
       case 'image': return 1;
       case 'audio': return 2;
+      case 'video': return 4;
       default: return 3;
     }
   }
