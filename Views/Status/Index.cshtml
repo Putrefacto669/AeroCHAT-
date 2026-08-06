@@ -111,7 +111,7 @@
     var activeBar = prog.children[iIdx];
     if (activeBar) {
       activeBar.classList.add('active');
-      activeBar.style.animationDuration = (s.type === 'image' ? 7 : 5) + 's';
+      activeBar.classList.add(s.type === 'image' ? 'slow' : 'fast');
       activeBar.addEventListener('animationend', next);
     }
 
@@ -128,7 +128,8 @@
     if (s.type === 'image') {
       body.innerHTML = '<img class="status-media" src="' + s.filePath + '" alt=""/>';
     } else {
-      body.innerHTML = '<div class="status-text">' + (s.content || '') + '</div>';
+      body.innerHTML = '<div class="status-text"></div>';
+      body.firstChild.textContent = s.content || '';
     }
 
     // Actions
@@ -155,6 +156,8 @@
   document.getElementById('navNext').addEventListener('click', next);
   document.addEventListener('keydown', function (e) {
     if (e.key === 'Escape') close();
+    var composeOpen = document.getElementById('composeModal').classList.contains('open');
+    if (composeOpen) return;
     if (e.key === 'ArrowRight') next();
     if (e.key === 'ArrowLeft') prev();
   });

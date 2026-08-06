@@ -916,6 +916,8 @@ audio { width: 200px; height: 32px; margin-top: 4px; border-radius: 8px; }
   content: ''; position: absolute; inset: 0; background: var(--accent);
   animation: statusProgress linear forwards;
 }
+.status-progress-bar.active.fast::before { animation-duration: 5s; }
+.status-progress-bar.active.slow::before { animation-duration: 7s; }
 @keyframes statusProgress { from { width: 0; } to { width: 100%; } }
 .status-progress-bar.done::before { content: ''; position: absolute; inset: 0; background: var(--accent2); }
 .status-head {
