@@ -302,7 +302,8 @@ function createGroup() {
 // ── Calls (WebRTC audio) ──
 window.acCall = {
   mode: null, peerId: null, peerName: '', peerAvatar: '', peerColor: '#6C63FF',
-  pc: null, stream: null, muted: false, timerInt: null, startTs: 0, pendingOffer: null
+  pc: null, stream: null, muted: false, timerInt: null, startTs: 0,
+  pendingOffer: null, pendingCandidates: []
 };
 const AC_RTC_CONFIG = { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] };
 
@@ -331,13 +332,31 @@ function makePc() {
     if (!ev.candidate || !window.acCall.peerId) return;
     sendCallMsg({ type: 'candidate', candidate: ev.candidate.candidate, sdpMid: ev.candidate.sdpMid, sdpMLineIndex: ev.candidate.sdpMLineIndex });
   };
+  pc.ontrack = function(ev) {
+    var el = document.getElementById('remoteAudio');
+    if (!el) return;
+    el.srcObject = ev.streams[0] || el.srcObject;
+    el.play().catch(function(e) { console.error('AeroChat: no se pudo reproducir el audio remoto', e); });
+  };
   pc.onconnectionstatechange = function() {
-    if (pc.connectionState === 'disconnected' || pc.connectionState === 'failed') endCall('Conexión perdida');
+    if (pc.connectionState === 'failed') endCall('Conexión perdida');
   };
   if (window.acCall.stream) {
     window.acCall.stream.getTracks().forEach(function(t) { pc.addTrack(t, window.acCall.stream); });
   }
   return pc;
+}
+
+function flushPendingCandidates() {
+  var pc = window.acCall.pc;
+  if (!pc || !pc.remoteDescription) return;
+  var list = window.acCall.pendingCandidates || [];
+  window.acCall.pendingCandidates = [];
+  list.forEach(function(msg) {
+    pc.addIceCandidate(new RTCIceCandidate({
+      candidate: msg.candidate, sdpMid: msg.sdpMid, sdpMLineIndex: msg.sdpMLineIndex
+    })).catch(function(e) { console.error('AeroChat: ice flush', e); });
+  });
 }
 
 function sendCallMsg(msg) { acInvoke('CallSignal', window.acCall.peerId, msg); }
@@ -405,6 +424,7 @@ function cleanupCall() {
   window.acCall.mode = null;
   window.acCall.peerId = null;
   window.acCall.pendingOffer = null;
+  window.acCall.pendingCandidates = [];
   document.getElementById('callMute').classList.remove('muted');
   document.getElementById('callMute').textContent = '🎙';
   setCallTimer(false);
@@ -485,6 +505,7 @@ function acceptIncoming() {
       var offer = window.acCall.pendingOffer;
       window.acCall.pendingOffer = null;
       return window.acCall.pc.setRemoteDescription(new RTCSessionDescription({ type: 'offer', sdp: offer.sdp }))
+        .then(function() { flushPendingCandidates(); })
         .then(function() { return window.acCall.pc.createAnswer(); })
         .then(function(answer) { return window.acCall.pc.setLocalDescription(answer); })
         .then(function() { sendCallMsg({ type: 'answer', sdp: window.acCall.pc.localDescription.sdp }); });
@@ -510,6 +531,7 @@ function registerCallHandlers(hub) {
       }
       setupCallDisplay(from, payload.fromName, payload.fromAvatar, payload.fromColor, 'Llamada entrante…');
       window.acCall.pendingOffer = msg;
+      window.acCall.pendingCandidates = [];
       window.acCall.mode = 'incoming';
       updateCallButtons();
       startRingtone();
@@ -517,15 +539,22 @@ function registerCallHandlers(hub) {
       return;
     }
     var pc = window.acCall.pc;
-    if (!pc || !window.acCall.peerId || window.acCall.peerId !== from) return;
     if (msg.type === 'answer' && msg.sdp) {
+      if (!pc || window.acCall.peerId !== from) return;
       pc.setRemoteDescription(new RTCSessionDescription({ type: 'answer', sdp: msg.sdp }))
+        .then(function() { flushPendingCandidates(); })
         .catch(function(e) { console.error('AeroChat: setRemote answer', e); });
       window.acCall.mode = 'active';
+      updateCallButtons();
       setCallUi('En llamada');
       setCallTimer(true);
       startTimer();
     } else if (msg.type === 'candidate' && msg.candidate) {
+      if (window.acCall.peerId !== from) return;
+      if (!pc || !pc.remoteDescription) {
+        window.acCall.pendingCandidates.push(msg);
+        return;
+      }
       pc.addIceCandidate(new RTCIceCandidate({
         candidate: msg.candidate, sdpMid: msg.sdpMid, sdpMLineIndex: msg.sdpMLineIndex
       })).catch(function(e) { console.error('AeroChat: ice', e); });
