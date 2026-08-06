@@ -868,6 +868,88 @@ audio { width: 200px; height: 32px; margin-top: 4px; border-radius: 8px; }
 .call-mute { background: var(--surface2); border: 1px solid var(--border); }
 .call-mute:hover { background: var(--border); }
 .call-mute.muted { background: var(--danger); color: #fff; }
+/* ── Status strip (sidebar) ── */
+.status-strip {
+  display: flex; gap: 10px; overflow-x: auto; padding: 10px 12px;
+  border-bottom: 1px solid var(--border);
+}
+.status-strip-item {
+  display: flex; flex-direction: column; align-items: center; gap: 4px;
+  text-decoration: none; color: var(--text); min-width: 58px; max-width: 64px;
+}
+.status-strip-item:hover .status-strip-name { color: var(--accent); }
+.status-ring {
+  position: relative; width: 42px; height: 42px; border-radius: 50%;
+  padding: 3px; background: var(--surface2);
+}
+.status-ring .avatar {
+  width: 100%; height: 100%; font-size: 1rem; border-radius: 50%;
+  position: relative; z-index: 1;
+}
+.status-ring.has-status::after {
+  content: ''; position: absolute; inset: -2px; border-radius: 50%;
+  background: conic-gradient(var(--accent), var(--accent2), var(--accent));
+}
+.status-strip-add {
+  position: absolute; right: -2px; bottom: -2px; width: 16px; height: 16px;
+  border-radius: 50%; background: var(--accent); color: #fff; font-size: .7rem;
+  display: flex; align-items: center; justify-content: center; z-index: 2;
+  border: 2px solid var(--surface);
+}
+.status-strip-name {
+  font-size: .68rem; font-weight: 600; max-width: 64px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.status-strip-hint { font-size: .72rem; color: var(--text-3); line-height: 1.4; padding: 2px 0; }
+
+/* ── Status viewer ── */
+.status-main { background: var(--bg); }
+.status-viewer {
+  position: relative; flex: 1; display: flex; flex-direction: column; overflow: hidden;
+  background: linear-gradient(160deg, var(--bg2), var(--bg));
+}
+.status-progress { display: flex; gap: 4px; padding: 12px 14px 4px; }
+.status-progress-bar {
+  flex: 1; height: 3px; border-radius: 2px; background: var(--border); overflow: hidden; position: relative;
+}
+.status-progress-bar.active::before {
+  content: ''; position: absolute; inset: 0; background: var(--accent);
+  animation: statusProgress linear forwards;
+}
+@keyframes statusProgress { from { width: 0; } to { width: 100%; } }
+.status-progress-bar.done::before { content: ''; position: absolute; inset: 0; background: var(--accent2); }
+.status-head {
+  display: flex; align-items: center; gap: 10px; padding: 10px 16px;
+}
+.status-avatar {
+  width: 40px; height: 40px; border-radius: 50%; color: #fff; font-weight: 700;
+  display: inline-flex; align-items: center; justify-content: center; font-size: 1rem;
+  overflow: hidden; flex-shrink: 0;
+}
+.status-avatar img { width: 100%; height: 100%; object-fit: cover; }
+.status-name { font-size: .92rem; font-weight: 700; }
+.status-time { font-size: .74rem; color: var(--text-2); }
+.status-body {
+  flex: 1; display: flex; align-items: center; justify-content: center;
+  padding: 16px; min-height: 0;
+}
+.status-text {
+  font-size: 1.35rem; font-weight: 600; text-align: center; line-height: 1.5;
+  max-width: 90%; word-break: break-word; padding: 20px;
+}
+.status-media {
+  max-width: 100%; max-height: 100%; border-radius: 12px; object-fit: contain;
+}
+.status-nav {
+  position: absolute; top: 0; bottom: 0; width: 35%; cursor: pointer;
+}
+.status-nav-prev { left: 0; }
+.status-nav-next { right: 0; }
+.status-actions {
+  display: flex; justify-content: center; gap: 10px; flex-wrap: wrap;
+  padding: 12px 16px; border-top: 1px solid var(--border);
+}
+.btn-new-status { align-self: center; margin-left: auto; }
 .call-hangup { background: var(--danger); color: #fff; }
 .call-hangup:hover { filter: brightness(1.1); }
 .call-accept { background: var(--accent2); color: #fff; }

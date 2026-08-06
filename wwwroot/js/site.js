@@ -84,6 +84,7 @@ function refreshSidebar() {
       });
       syncThemePills();
       applyPresence();
+      loadStatusStrip();
     })
     .catch(function(e) { console.error('AeroChat: no se pudo refrescar el sidebar', e); });
 }
@@ -228,10 +229,15 @@ function acInvoke(method) {
   });
   hub.on('GroupMemberLeft', function() { refreshSidebar(); });
   hub.on('GroupLeft', function() { refreshSidebar(); });
+  hub.on('StatusChanged', function(name) {
+    showToast((name || 'Un amigo') + ' publicó un estado.', 'info');
+    loadStatusStrip();
+  });
 
   function onConnected() {
     document.dispatchEvent(new Event('ac:hubconnected'));
     hub.invoke('GetOnlineUsers').catch(function() {});
+    loadStatusStrip();
   }
   hub.onreconnected(onConnected);
   hub.start().then(onConnected).catch(function(err) {
@@ -297,6 +303,36 @@ function createGroup() {
     .map(function(c) { return c.value; });
   if (!name) { showToast('Escribí un nombre para el grupo.'); return; }
   acInvoke('CreateGroup', name, ids);
+}
+
+// ── Status strip ──
+function openNewStatus() { openModal('newStatusModal'); }
+function statusAvatar(name, color, path) {
+  if (path) return '<img src="' + path + '" class="avatar avatar-md" alt=""/>';
+  return '<span class="avatar avatar-md" style="background:' + color + '">' + escapeHtml((name || '?').charAt(0).toUpperCase()) + '</span>';
+}
+function loadStatusStrip() {
+  var wrap = document.getElementById('statusStrip');
+  if (!wrap) return;
+  fetch('/Status/Summary')
+    .then(function(r) { if (!r.ok) throw new Error('status'); return r.json(); })
+    .then(function(data) {
+      var html = '<a class="status-strip-item" href="/Status/Index" title="Mi estado">'
+        + '<span class="status-ring' + (data.me.hasStatus ? ' has-status' : '') + '">'
+        + statusAvatar(data.me.name, data.me.color, data.me.avatar)
+        + '<span class="status-strip-add">＋</span></span>'
+        + '<span class="status-strip-name">Mi estado</span></a>';
+      (data.friends || []).forEach(function(f) {
+        html += '<a class="status-strip-item" href="/Status/Index?u=' + f.userId + '" title="' + escapeHtml(f.name) + ': ' + escapeHtml(f.preview || '') + '">'
+          + '<span class="status-ring has-status">' + statusAvatar(f.name, f.color, f.avatar) + '</span>'
+          + '<span class="status-strip-name">' + escapeHtml(f.name) + '</span></a>';
+      });
+      if (!data.friends.length && !data.me.hasStatus) {
+        html += '<div class="status-strip-hint">Tus estados y los de tus amigos aparecen acá</div>';
+      }
+      wrap.innerHTML = html;
+    })
+    .catch(function(e) { console.error('AeroChat: no se pudo cargar estados', e); });
 }
 
 // ── Calls (WebRTC audio) ──

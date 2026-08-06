@@ -9,6 +9,7 @@ public class DataService
     private readonly string _usersFile;
     private readonly string _messagesFile;
     private readonly string _groupsFile;
+    private readonly string _statusesFile;
     private readonly JsonSerializerOptions _opts;
     private readonly SemaphoreSlim _lock = new(1, 1);
 
@@ -18,6 +19,7 @@ public class DataService
         _usersFile = Path.Combine(_dataPath, "users.json");
         _messagesFile = Path.Combine(_dataPath, "messages.json");
         _groupsFile = Path.Combine(_dataPath, "groups.json");
+        _statusesFile = Path.Combine(_dataPath, "statuses.json");
         _opts = new JsonSerializerOptions
         {
             WriteIndented = true,
@@ -356,6 +358,52 @@ public class DataService
         msg.Content = "Mensaje eliminado";
         SaveMessages(messages);
         return true;
+    }
+
+    // ── STATUSES ──────────────────────────────────────────
+    public List<Status> GetStatuses()
+    {
+        if (!File.Exists(_statusesFile)) return new();
+        var json = File.ReadAllText(_statusesFile);
+        return JsonSerializer.Deserialize<List<Status>>(json, _opts) ?? new();
+    }
+
+    private void SaveStatuses(List<Status> statuses)
+        => File.WriteAllText(_statusesFile, JsonSerializer.Serialize(statuses, _opts));
+
+    public Status? AddStatus(Status status)
+    {
+        lock (_lock)
+        {
+            var statuses = GetStatuses();
+            statuses.Add(status);
+            SaveStatuses(statuses);
+            return status;
+        }
+    }
+
+    public bool DeleteStatus(string userId, string statusId)
+    {
+        lock (_lock)
+        {
+            var statuses = GetStatuses();
+            var s = statuses.FirstOrDefault(x => x.Id == statusId && x.UserId == userId);
+            if (s == null) return false;
+            statuses.Remove(s);
+            SaveStatuses(statuses);
+            return true;
+        }
+    }
+
+    public List<Status> GetVisibleStatuses(string userId)
+    {
+        var cutoff = DateTime.UtcNow.AddHours(-24);
+        var friendIds = GetFriendIds(userId);
+        return GetStatuses()
+            .Where(s => s.CreatedAt >= cutoff && (s.UserId == userId || friendIds.Contains(s.UserId)))
+            .OrderBy(s => s.UserId)
+            .ThenBy(s => s.CreatedAt)
+            .ToList();
     }
 
     // ── HELPERS ────────────────────────────────────────────

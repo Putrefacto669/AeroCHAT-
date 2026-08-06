@@ -79,6 +79,22 @@ public class CallMessage
     public int? SdpMLineIndex { get; set; }
 }
 
+public enum StatusType { Text, Image }
+
+public class Status
+{
+    public string Id { get; set; } = Guid.NewGuid().ToString();
+    public string UserId { get; set; } = "";
+    public string UserName { get; set; } = "";
+    public string UserColor { get; set; } = "#6C63FF";
+    public string? UserAvatar { get; set; }
+    public string Content { get; set; } = "";
+    public StatusType Type { get; set; } = StatusType.Text;
+    public string? FilePath { get; set; }
+    public string? FileName { get; set; }
+    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+}
+
 public class LoginViewModel
 {
     public string Username { get; set; } = "";

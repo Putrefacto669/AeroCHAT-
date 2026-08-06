@@ -42,6 +42,10 @@
     </a>
   </div>
 
+  <div class="status-strip" id="statusStrip">
+    <div class="status-strip-hint">Cargando estados…</div>
+  </div>
+
   @if (requests.Any())
   {
     <div class="sidebar-section-label">
@@ -185,5 +189,27 @@
       <button type="button" class="btn btn-secondary" onclick="closeModal('newGroupModal')">Cancelar</button>
       <button type="button" class="btn btn-primary" onclick="createGroup()">Crear grupo</button>
     </div>
+  </div>
+</div>
+
+<!-- Nuevo estado modal -->
+<div class="modal-overlay" id="newStatusModal">
+  <div class="modal">
+    <h3>Nuevo estado</h3>
+    <form method="post" action="/Status/Create" enctype="multipart/form-data">
+      <div class="field">
+        <label for="statusContent">Texto</label>
+        <textarea id="statusContent" name="content" class="edit-textarea" rows="3" placeholder="¿Qué estás haciendo?"></textarea>
+      </div>
+      <div class="field">
+        <label class="avatar-change-label">🖼 Agregar foto
+          <input type="file" name="image" accept="image/*"/>
+        </label>
+      </div>
+      <div class="modal-actions">
+        <button type="button" class="btn btn-secondary" onclick="closeModal('newStatusModal')">Cancelar</button>
+        <button type="submit" class="btn btn-primary">Publicar</button>
+      </div>
+    </form>
   </div>
 </div>

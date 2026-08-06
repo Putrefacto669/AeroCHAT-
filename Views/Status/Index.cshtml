@@ -1,0 +1,217 @@
+@{
+  ViewData["Title"] = "Estados";
+}
+
+<div class="app-shell">
+  @await Html.PartialAsync("_Sidebar")
+
+  <div class="chat-main status-main">
+    <div class="chat-header">
+      <button class="hamburger" onclick="openSidebar()" aria-label="Menú">☰</button>
+      <div class="chat-header-info">
+        <div class="chat-header-name">Estados</div>
+        <div class="chat-header-sub">Solo tus amigos pueden verlos</div>
+      </div>
+      <button class="btn btn-ghost btn-new-status" onclick="openNewStatus()">＋ Nuevo</button>
+    </div>
+
+    <div class="status-viewer" id="statusViewer">
+      <div class="status-progress" id="statusProgress"></div>
+      <div class="status-head">
+        <span class="status-avatar" id="statusAvatar"></span>
+        <div>
+          <div class="status-name" id="statusName"></div>
+          <div class="status-time" id="statusTime"></div>
+        </div>
+      </div>
+      <div class="status-body" id="statusBody"></div>
+      <div class="status-nav status-nav-prev" id="navPrev" title="Anterior"></div>
+      <div class="status-nav status-nav-next" id="navNext" title="Siguiente"></div>
+    </div>
+
+    <div class="status-actions" id="statusActions">
+      <button class="btn btn-ghost" id="replyBtn" onclick="openCompose('reply')">💬 Responder</button>
+      <button class="btn btn-ghost" id="mentionBtn" onclick="openCompose('mention')">&#64; Mencionar</button>
+      <button class="btn btn-danger" id="deleteBtn" onclick="deleteStatus()">🗑 Eliminar</button>
+    </div>
+  </div>
+</div>
+
+<!-- Compose modal (responder / mencionar) -->
+<div class="modal-overlay" id="composeModal">
+  <div class="modal">
+    <h3 id="composeTitle">Responder</h3>
+    <div class="field" id="mentionPickWrap" style="display:none">
+      <label for="mentionPick">Elegí a quién mencionar</label>
+      <select id="mentionPick" class="edit-textarea"></select>
+    </div>
+    <div class="field">
+      <label for="composeText" id="composeLabel">Mensaje</label>
+      <textarea id="composeText" class="edit-textarea" rows="3"></textarea>
+    </div>
+    <div class="modal-actions">
+      <button type="button" class="btn btn-secondary" onclick="closeModal('composeModal')">Cancelar</button>
+      <button type="button" class="btn btn-primary" onclick="sendCompose()">Enviar</button>
+    </div>
+  </div>
+</div>
+
+@section Scripts {
+<script>
+  var statuses = JSON.parse('@Html.Raw(ViewBag.StatusJson)');
+  var friends = JSON.parse('@Html.Raw(ViewBag.FriendsJson)');
+  var currentUserId = document.body.getAttribute('data-userid');
+  var startUser = '@ViewBag.StartUser';
+
+  // ── Agrupar por usuario ──
+  var groups = [];
+  statuses.forEach(function (s) {
+    var g = groups[groups.length - 1];
+    if (!g || g.userId !== s.userId) {
+      g = { userId: s.userId, userName: s.userName, userColor: s.userColor, userAvatar: s.userAvatar, items: [] };
+      groups.push(g);
+    }
+    g.items.push(s);
+  });
+
+  var gIdx = 0, iIdx = 0, timer = null;
+  for (var i = 0; i < groups.length; i++) {
+    if (groups[i].userId === startUser) { gIdx = i; break; }
+  }
+
+  function timeAgo(iso) {
+    var diff = Math.floor((Date.now() - new Date(iso).getTime()) / 1000);
+    if (diff < 60) return 'hace un momento';
+    var m = Math.floor(diff / 60);
+    if (m < 60) return 'hace ' + m + ' min';
+    var h = Math.floor(m / 60);
+    if (h < 24) return 'hace ' + h + ' h';
+    return new Date(iso).toLocaleDateString('es-GT', { day: 'numeric', month: 'short' });
+  }
+
+  function curStatus() {
+    return groups[gIdx] ? groups[gIdx].items[iIdx] : null;
+  }
+
+  function render() {
+    if (timer) clearTimeout(timer);
+    var g = groups[gIdx];
+    if (!g) { document.getElementById('statusBody').textContent = 'No hay estados todavía.'; return; }
+    var s = g.items[iIdx];
+
+    // Progress bars
+    var prog = document.getElementById('statusProgress');
+    prog.innerHTML = '';
+    g.items.forEach(function (_, i) {
+      var bar = document.createElement('div');
+      bar.className = 'status-progress-bar';
+      if (i < iIdx) bar.classList.add('done');
+      prog.appendChild(bar);
+    });
+    var activeBar = prog.children[iIdx];
+    if (activeBar) {
+      activeBar.classList.add('active');
+      activeBar.style.animationDuration = (s.type === 'image' ? 7 : 5) + 's';
+      activeBar.addEventListener('animationend', next);
+    }
+
+    // Head
+    var av = document.getElementById('statusAvatar');
+    av.style.background = s.userColor || '#6C63FF';
+    av.textContent = (s.userName || '?').charAt(0).toUpperCase();
+    if (s.userAvatar) av.innerHTML = '<img src="' + s.userAvatar + '" alt=""/>';
+    document.getElementById('statusName').textContent = s.userName;
+    document.getElementById('statusTime').textContent = timeAgo(s.createdAt);
+
+    // Body
+    var body = document.getElementById('statusBody');
+    if (s.type === 'image') {
+      body.innerHTML = '<img class="status-media" src="' + s.filePath + '" alt=""/>';
+    } else {
+      body.innerHTML = '<div class="status-text">' + (s.content || '') + '</div>';
+    }
+
+    // Actions
+    var isMine = s.userId === currentUserId;
+    document.getElementById('replyBtn').style.display = isMine ? 'none' : '';
+    document.getElementById('mentionBtn').style.display = isMine ? 'none' : '';
+    document.getElementById('deleteBtn').style.display = isMine ? '' : 'none';
+  }
+
+  function next() {
+    var g = groups[gIdx];
+    if (!g) return;
+    if (iIdx < g.items.length - 1) { iIdx++; render(); }
+    else if (gIdx < groups.length - 1) { gIdx++; iIdx = 0; render(); }
+    else close();
+  }
+  function prev() {
+    if (iIdx > 0) { iIdx--; render(); }
+    else if (gIdx > 0) { gIdx--; iIdx = groups[gIdx].items.length - 1; render(); }
+  }
+  function close() { location.href = '/Chat/Index'; }
+
+  document.getElementById('navPrev').addEventListener('click', prev);
+  document.getElementById('navNext').addEventListener('click', next);
+  document.addEventListener('keydown', function (e) {
+    if (e.key === 'Escape') close();
+    if (e.key === 'ArrowRight') next();
+    if (e.key === 'ArrowLeft') prev();
+  });
+
+  // ── Compose (responder / mencionar) ──
+  var composeMode = 'reply';
+  var composeTarget = null;
+  function openCompose(mode) {
+    composeMode = mode;
+    var s = curStatus();
+    if (!s) return;
+    composeTarget = s;
+    document.getElementById('composeTitle').textContent = mode === 'reply' ? 'Responder a ' + s.userName : 'Mencionar a un amigo';
+    document.getElementById('mentionPickWrap').style.display = mode === 'mention' ? '' : 'none';
+    var pick = document.getElementById('mentionPick');
+    if (mode === 'mention' && pick.options.length === 0) {
+      friends.forEach(function (f) {
+        var o = document.createElement('option');
+        o.value = f.id;
+        o.textContent = f.displayName;
+        pick.appendChild(o);
+      });
+    }
+    document.getElementById('composeText').value = mode === 'mention' ? '@@' + s.userName + ' ' : '';
+    openModal('composeModal');
+    document.getElementById('composeText').focus();
+  }
+  function sendCompose() {
+    var text = document.getElementById('composeText').value.trim();
+    if (!text) return;
+    if (composeMode === 'reply') {
+      acInvoke('SendMessage', composeTarget.userId, text);
+      showToast('Respuesta enviada a ' + composeTarget.userName + '.', 'success');
+    } else {
+      var fId = document.getElementById('mentionPick').value;
+      if (!fId) { showToast('Elegí un amigo para mencionar.'); return; }
+      acInvoke('SendMessage', fId, text);
+      var fName = friends.find(function (f) { return f.id === fId; });
+      showToast('Mensaje enviado a ' + (fName ? fName.displayName : 'tu amigo') + '.', 'success');
+    }
+    closeModal('composeModal');
+  }
+
+  // ── Delete own status ──
+  function deleteStatus() {
+    var s = curStatus();
+    if (!s || !confirm('¿Eliminar este estado?')) return;
+    var form = document.createElement('form');
+    form.method = 'post';
+    form.action = '/Status/Delete';
+    var input = document.createElement('input');
+    input.type = 'hidden'; input.name = 'id'; input.value = s.id;
+    form.appendChild(input);
+    document.body.appendChild(form);
+    form.submit();
+  }
+
+  render();
+</script>
+}

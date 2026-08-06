@@ -101,6 +101,19 @@ public class ChatHub : Hub
         }
     }
 
+    public static async Task NotifyUsers(IHubContext<ChatHub> ctx, IEnumerable<string> userIds, string method, object? arg)
+    {
+        List<string> conns = new();
+        lock (_connLock)
+        {
+            foreach (var id in userIds)
+                if (_connections.TryGetValue(id, out var set) && set.Count > 0)
+                    conns.AddRange(set);
+        }
+        if (conns.Count > 0)
+            await ctx.Clients.Clients(conns).SendAsync(method, arg);
+    }
+
     // ── Conversation groups ───────────────────────────
     public async Task JoinConversation(string otherId)
     {
