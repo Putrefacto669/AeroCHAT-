@@ -4,8 +4,8 @@
 @if (string.IsNullOrEmpty(Model.Error))
 {
   <div id="introOverlay" class="intro-overlay">
-    <video id="introBgVideo" class="intro-bg-video" src="/media/intro.mp4" autoplay muted playsinline webkit-playsinline disableRemotePlayback preload="auto" tabindex="-1" aria-hidden="true"></video>
-    <video id="introVideo" class="intro-fg-video" src="/media/intro.mp4" autoplay muted playsinline webkit-playsinline disableRemotePlayback preload="auto" aria-label="Intro de AeroChat"></video>
+    <video id="introBgVideo" class="intro-bg-video" autoplay muted playsinline webkit-playsinline disableRemotePlayback preload="auto" tabindex="-1" aria-hidden="true"></video>
+    <video id="introVideo" class="intro-fg-video" autoplay muted playsinline webkit-playsinline disableRemotePlayback preload="auto" aria-label="Intro de AeroChat"></video>
     <div class="intro-vignette"></div>
     <button type="button" id="introSound" class="intro-sound" title="Activar sonido">
       <svg id="introSoundOff" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><line x1="23" y1="9" x2="17" y2="15"/><line x1="17" y1="9" x2="23" y2="15"/></svg>
@@ -53,6 +53,10 @@
       if (!ov) return;
       var v = document.getElementById('introVideo');
       var bg = document.getElementById('introBgVideo');
+      var isPortrait = (window.matchMedia && window.matchMedia('(orientation: portrait)').matches) || (window.innerHeight > window.innerWidth);
+      var src = isPortrait ? '/media/intro-vertical.mp4' : '/media/intro.mp4';
+      v.src = src;
+      if (bg) bg.src = src;
       var done = false;
       var timer = null;
       function dismiss() {
