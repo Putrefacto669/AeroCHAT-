@@ -86,7 +86,6 @@
       var onIco = document.getElementById('introSoundOn');
       function setSound(on) {
         v.muted = !on;
-        if (bg) bg.muted = !on;
         if (offIco) offIco.hidden = on;
         if (onIco) onIco.hidden = !on;
       }
