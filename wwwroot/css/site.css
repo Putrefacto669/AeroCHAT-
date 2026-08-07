@@ -507,6 +507,39 @@ audio { width: 200px; height: 32px; margin-top: 4px; border-radius: 8px; }
 .attach-opt:hover { border-color: var(--accent); color: var(--accent); background: var(--accent-soft); }
 .attach-opt input[type="file"] { display: none; }
 
+/* Sticker messages */
+.bubble.sticker { background: transparent; border: none; box-shadow: none; padding: 0; }
+.msg-sticker {
+  width: 180px; height: 180px; object-fit: contain;
+  display: block; cursor: default; user-select: none; -webkit-user-drag: none;
+}
+
+/* Sticker picker */
+.sticker-panel {
+  overflow: hidden; max-height: 0; transition: max-height .22s ease, padding .22s ease;
+}
+.sticker-panel:not([hidden]) { max-height: 240px; padding-top: 8px; }
+.sticker-panel-body {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(72px, 1fr));
+  gap: 6px; max-height: 220px; overflow-y: auto;
+  padding: 6px; border: 1px solid var(--border); border-radius: 12px;
+  background: var(--surface2);
+}
+.sticker-cell {
+  border: none; background: transparent; padding: 4px; border-radius: 10px;
+  cursor: pointer; transition: all var(--transition); display: flex;
+  align-items: center; justify-content: center;
+}
+.sticker-cell:hover { background: var(--border); transform: scale(1.08); }
+.sticker-cell img { width: 64px; height: 64px; object-fit: contain; pointer-events: none; }
+.sticker-empty {
+  grid-column: 1 / -1; text-align: center; padding: 18px 8px;
+  font-size: .82rem; color: var(--text-3);
+}
+.icon-btn-sticker { background: var(--surface2); color: var(--text-2); }
+.icon-btn-sticker:hover { background: var(--border); color: var(--text); }
+.icon-btn-sticker svg { display: block; }
+
 /* Reply bar (quote while composing) */
 .reply-bar {
   overflow: hidden; max-height: 0; transition: max-height .2s ease, padding .2s ease;
@@ -801,6 +834,7 @@ audio { width: 200px; height: 32px; margin-top: 4px; border-radius: 8px; }
   .bubble { font-size: .88rem; padding: 7px 10px 6px; }
   .msg-text { font-size: .9rem; }
   .msg-image { max-width: 200px; max-height: 180px; }
+  .msg-sticker { width: 140px; height: 140px; }
   .login-brand-icon { width: 52px; height: 52px; font-size: 22px; }
   .login-brand h1 { font-size: 1.4rem; }
   .theme-toggle-pill { width: 24px; height: 18px; font-size: 10px; }
@@ -810,6 +844,7 @@ audio { width: 200px; height: 32px; margin-top: 4px; border-radius: 8px; }
   .sidebar { width: 240px; }
   .msg-row { max-width: 95%; }
   .msg-image { max-width: 160px; max-height: 150px; }
+  .msg-sticker { width: 110px; height: 110px; }
   audio { width: 140px; }
   .msg-audio { min-width: 140px; }
   .msg-doc { min-width: 140px; }

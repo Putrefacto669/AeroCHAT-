@@ -7,6 +7,7 @@ namespace AeroChat.Hubs;
 public class ChatHub : Hub
 {
     private readonly DataService _data;
+    private readonly IWebHostEnvironment _env;
     private static readonly object _connLock = new();
     private static readonly Dictionary<string, HashSet<string>> _connections = new();
     private static readonly object _callLock = new();
@@ -22,7 +23,11 @@ public class ChatHub : Hub
         public HashSet<string> Invitees { get; } = new();
     }
 
-    public ChatHub(DataService data) => _data = data;
+    public ChatHub(DataService data, IWebHostEnvironment env)
+    {
+        _data = data;
+        _env = env;
+    }
 
     private string? UserId => Context.GetHttpContext()?.Session.GetString("UserId");
 
@@ -380,6 +385,54 @@ public class ChatHub : Hub
         await Clients.Group(GroupGroupStatic(groupId)).SendAsync("ReceiveGroupMessage", msg);
     }
 
+    // ── Stickers ──────────────────────────────────────
+    public async Task SendSticker(string receiverId, string stickerPath)
+    {
+        var uid = UserId;
+        if (uid == null || !IsValidStickerPath(stickerPath)) return;
+
+        var sender = _data.GetUserById(uid);
+        if (sender == null) return;
+
+        var msg = _data.AddMessage(new Message
+        {
+            SenderId = uid,
+            SenderName = sender.DisplayName,
+            SenderColor = sender.AvatarColor,
+            ReceiverId = receiverId,
+            Content = Path.GetFileName(stickerPath),
+            Type = MessageType.Sticker,
+            FilePath = stickerPath,
+            CreatedAt = DateTime.UtcNow
+        });
+
+        var group = GroupStatic(uid, receiverId);
+        await Clients.Group(group).SendAsync("ReceiveMessage", msg);
+    }
+
+    public async Task SendGroupSticker(string groupId, string stickerPath)
+    {
+        var uid = UserId;
+        if (uid == null || !IsValidStickerPath(stickerPath)) return;
+        if (!_data.IsGroupMember(groupId, uid)) return;
+
+        var sender = _data.GetUserById(uid);
+        if (sender == null) return;
+
+        var msg = _data.AddGroupMessage(new Message
+        {
+            SenderId = uid,
+            SenderName = sender.DisplayName,
+            SenderColor = sender.AvatarColor,
+            ReceiverId = groupId,
+            Content = Path.GetFileName(stickerPath),
+            Type = MessageType.Sticker,
+            FilePath = stickerPath,
+            CreatedAt = DateTime.UtcNow
+        });
+        await Clients.Group(GroupGroupStatic(groupId)).SendAsync("ReceiveGroupMessage", msg);
+    }
+
     public async Task ReactToGroupMessage(string groupId, string messageId, string emoji)
     {
         var uid = UserId;
@@ -716,6 +769,19 @@ public class ChatHub : Hub
         var arr = new[] { a, b };
         Array.Sort(arr);
         return $"chat_{arr[0]}_{arr[1]}";
+    }
+
+    private bool IsValidStickerPath(string path)
+    {
+        if (string.IsNullOrWhiteSpace(path)) return false;
+        if (!path.StartsWith("/stickers/", StringComparison.OrdinalIgnoreCase)) return false;
+        if (path.Contains("..")) return false;
+        var ext = Path.GetExtension(path).ToLowerInvariant();
+        if (ext is not ".png" and not ".webp" and not ".gif") return false;
+
+        var full = Path.GetFullPath(Path.Combine(
+            _env.WebRootPath, path.TrimStart('/').Replace('/', Path.DirectorySeparatorChar)));
+        return full.StartsWith(_env.WebRootPath, StringComparison.OrdinalIgnoreCase) && File.Exists(full);
     }
 
 }

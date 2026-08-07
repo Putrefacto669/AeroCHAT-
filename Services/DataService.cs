@@ -307,7 +307,7 @@ public class DataService
             if (msg == null) return false;
             msg.IsDeleted = true;
             msg.Content = "Mensaje eliminado";
-            DeleteUploadedFile(msg.FilePath);
+            if (msg.Type != MessageType.Sticker) DeleteUploadedFile(msg.FilePath);
             SaveList(_messagesFile, _messages);
             return true;
         }
@@ -552,7 +552,7 @@ public class DataService
             if (msg == null) return false;
             msg.IsDeleted = true;
             msg.Content = "Mensaje eliminado";
-            DeleteUploadedFile(msg.FilePath);
+            if (msg.Type != MessageType.Sticker) DeleteUploadedFile(msg.FilePath);
             SaveList(_messagesFile, _messages);
             return true;
         }

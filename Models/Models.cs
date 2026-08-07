@@ -64,7 +64,7 @@ public class Message
     public List<Reaction> Reactions { get; set; } = new();
 }
 
-public enum MessageType { Text, Image, Audio, Document, Video }
+public enum MessageType { Text, Image, Audio, Document, Video, Sticker }
 
 public enum MessageScope { Direct, Group }
 
