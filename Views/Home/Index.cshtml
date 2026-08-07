@@ -1,6 +1,18 @@
 @model LoginViewModel
 @{ ViewData["Title"] = "Ingresar"; Layout = "_Layout"; }
 
+@if (string.IsNullOrEmpty(Model.Error))
+{
+  <div id="introOverlay" class="intro-overlay">
+    <video id="introVideo" src="/media/intro.mp4" muted playsinline preload="auto" aria-label="Intro de AeroChat"></video>
+    <button type="button" id="introSound" class="intro-sound" title="Activar sonido">
+      <svg id="introSoundOff" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><line x1="23" y1="9" x2="17" y2="15"/><line x1="17" y1="9" x2="23" y2="15"/></svg>
+      <svg id="introSoundOn" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" hidden><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14"/></svg>
+    </button>
+    <button type="button" id="introSkip" class="intro-skip">Saltar intro</button>
+  </div>
+}
+
 <div class="login-page">
   <div class="login-card">
     <div class="login-brand">
@@ -31,3 +43,42 @@
     </p>
   </div>
 </div>
+
+@section Scripts {
+  <script>
+    (function () {
+      var ov = document.getElementById('introOverlay');
+      if (!ov) return;
+      var v = document.getElementById('introVideo');
+      var done = false;
+      var timer = null;
+      function dismiss() {
+        if (done) return;
+        done = true;
+        if (timer) clearTimeout(timer);
+        ov.classList.add('out');
+        setTimeout(function () { ov.remove(); }, 650);
+      }
+      v.addEventListener('ended', dismiss);
+      v.addEventListener('loadedmetadata', function () {
+        var d = (v.duration || 5) * 1000;
+        timer = setTimeout(dismiss, d + 400);
+      });
+      var skip = document.getElementById('introSkip');
+      if (skip) skip.addEventListener('click', dismiss);
+      ov.addEventListener('click', function (e) { if (e.target === ov) dismiss(); });
+      var sound = document.getElementById('introSound');
+      if (sound) sound.addEventListener('click', function () {
+        v.muted = !v.muted;
+        var off = document.getElementById('introSoundOff');
+        var on = document.getElementById('introSoundOn');
+        if (off) off.hidden = v.muted;
+        if (on) on.hidden = !v.muted;
+        if (!v.muted) v.play().catch(function () {});
+      });
+      var attempt = v.play();
+      if (attempt && attempt.catch) attempt.catch(function () { dismiss(); });
+      setTimeout(dismiss, 7000);
+    })();
+  </script>
+}

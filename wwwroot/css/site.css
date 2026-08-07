@@ -1187,3 +1187,27 @@ audio { width: 200px; height: 32px; margin-top: 4px; border-radius: 8px; }
 .call-invite-go { margin-left: auto; color: var(--accent); }
 .btn-invite-close { width: 100%; }
 
+/* ── Intro overlay (Home) ── */
+.intro-overlay {
+  position: fixed; inset: 0; z-index: 2000;
+  background: #000; display: flex; align-items: center; justify-content: center;
+  opacity: 1; transition: opacity .6s ease; cursor: pointer;
+}
+.intro-overlay.out { opacity: 0; pointer-events: none; }
+.intro-overlay video { width: 100%; height: 100%; object-fit: contain; }
+.intro-skip {
+  position: absolute; top: 16px; right: 16px;
+  background: rgba(255,255,255,.14); color: #fff; border: none;
+  border-radius: 20px; padding: 8px 16px; font-size: .85rem; cursor: pointer;
+  backdrop-filter: blur(6px); transition: background var(--transition);
+}
+.intro-skip:hover { background: rgba(255,255,255,.26); }
+.intro-sound {
+  position: absolute; bottom: 16px; right: 16px;
+  width: 40px; height: 40px; border-radius: 50%;
+  background: rgba(255,255,255,.14); color: #fff; border: none;
+  display: flex; align-items: center; justify-content: center; cursor: pointer;
+  backdrop-filter: blur(6px); transition: background var(--transition);
+}
+.intro-sound:hover { background: rgba(255,255,255,.26); }
+
