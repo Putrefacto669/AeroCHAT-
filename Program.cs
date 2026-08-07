@@ -26,19 +26,7 @@ builder.Services.AddSession(options =>
 
 var app = builder.Build();
 
-var safeContentTypes = new Microsoft.AspNetCore.StaticFiles.FileExtensionContentTypeProvider();
-foreach (var ext in new[]
-{
-    ".html", ".htm", ".shtml", ".xhtml", ".svg", ".svgz", ".xml", ".xsl", ".xslt",
-    ".js", ".mjs", ".json", ".php", ".phtml", ".asp", ".aspx", ".jsp", ".cgi",
-    ".pl", ".py", ".rb", ".sh", ".bash", ".zsh", ".bat", ".cmd", ".ps1", ".vbs",
-    ".jsx", ".ts", ".wasm", ".jar", ".swf", ".exe", ".msi", ".dll", ".so", ".dylib", ".apk"
-})
-{
-    safeContentTypes.Mappings[ext] = "application/octet-stream";
-}
-
-app.UseStaticFiles(new StaticFileOptions { ContentTypeProvider = safeContentTypes });
+app.UseStaticFiles(new StaticFileOptions { ContentTypeProvider = new AeroChat.Services.SaferContentTypeProvider() });
 app.UseRouting();
 app.UseSession();
 

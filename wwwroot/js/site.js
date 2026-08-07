@@ -346,7 +346,13 @@ window.acCall = {
   ringCtx: null, ringOsc: null, ringInt: null,
   outgoingTimer: null, incoming: null
 };
-const AC_RTC_CONFIG = { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] };
+const AC_RTC_CONFIG = {
+  iceServers: [
+    { urls: 'stun:stun.l.google.com:19302' },
+    { urls: 'stun:stun1.l.google.com:19302' },
+    { urls: 'stun:stun.cloudflare.com:3478' }
+  ]
+};
 
 function setCallUi(state) { var el = document.getElementById('callState'); if (el) el.textContent = state; }
 function setCallTimer(show) { document.getElementById('callTimer').hidden = !show; }
@@ -422,7 +428,16 @@ function createPeer(remoteId) {
     });
   };
   pc.ontrack = function(ev) {
-    if (ev.streams && ev.streams[0]) attachRemoteStream(remoteId, ev.streams[0]);
+    var src = ev.streams && ev.streams[0];
+    if (!peer.remoteStream) peer.remoteStream = new MediaStream();
+    if (src) {
+      src.getTracks().forEach(function(t) {
+        if (peer.remoteStream.getTracks().indexOf(t) === -1) peer.remoteStream.addTrack(t);
+      });
+    } else if (peer.remoteStream.getTracks().indexOf(ev.track) === -1) {
+      peer.remoteStream.addTrack(ev.track);
+    }
+    attachRemoteStream(remoteId, peer.remoteStream);
   };
   pc.onconnectionstatechange = function() {
     if (pc.connectionState === 'failed' || pc.connectionState === 'closed') {
@@ -561,8 +576,17 @@ function attachRemoteStream(remoteId, stream) {
   if (!t) t = renderPeerVideo(remoteId);
   if (!t) return;
   var v = t.querySelector('video');
-  v.srcObject = stream;
-  v.play().catch(function(e) { console.error('AeroChat: play remoto', e); });
+  if (v.srcObject !== stream) v.srcObject = stream;
+  var p = v.play();
+  if (p && p.catch) p.catch(function(e) {
+    if (e && e.name === 'NotAllowedError') {
+      v.muted = true;
+      v.play().catch(function() {});
+      v.muted = false;
+    } else {
+      console.error('AeroChat: play remoto', e);
+    }
+  });
 }
 function clearParticipants() {
   var p = document.getElementById('callParticipants');
