@@ -1195,6 +1195,15 @@ audio { width: 200px; height: 32px; margin-top: 4px; border-radius: 8px; }
 }
 .intro-overlay.out { opacity: 0; pointer-events: none; }
 .intro-overlay video { width: 100%; height: 100%; object-fit: contain; }
+.intro-vignette {
+  position: absolute; inset: 0; pointer-events: none;
+  background:
+    radial-gradient(ellipse at center, transparent 55%, rgba(0,0,0,.45) 100%),
+    linear-gradient(to bottom, rgba(0,0,0,.28), transparent 18%, transparent 82%, rgba(0,0,0,.32));
+}
+@media (orientation: portrait) {
+  .intro-overlay video { object-fit: cover; }
+}
 .intro-play-prompt {
   position: absolute; inset: 0; display: flex;
   align-items: center; justify-content: center; cursor: pointer;
