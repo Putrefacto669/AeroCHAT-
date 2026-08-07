@@ -533,6 +533,14 @@ function startTimer() {
   }, 1000);
 }
 
+function callDurationText() {
+  var ts = window.acCall.startTs;
+  if (!ts) return '';
+  var s = Math.floor((Date.now() - ts) / 1000);
+  if (s < 1) return '';
+  return ' · ' + String(Math.floor(s / 60)).padStart(2, '0') + ':' + String(s % 60).padStart(2, '0');
+}
+
 function clearCallVideos() {
   var grid = document.getElementById('callVideos');
   if (grid) grid.innerHTML = '';
@@ -648,6 +656,7 @@ function cleanupCall() {
   window.acCall.muted = false;
   window.acCall.camOff = false;
   window.acCall.incoming = null;
+  window.acCall.startTs = 0;
   var muteBtn = document.getElementById('callMute');
   if (muteBtn) { muteBtn.classList.remove('muted'); muteBtn.textContent = '🎙'; }
   var camBtn = document.getElementById('callCam');
@@ -661,18 +670,25 @@ function cleanupCall() {
 
 function endCall(reason) {
   if (window.acCall.mode && window.acCall.roomId) acInvoke('LeaveCallRoom', window.acCall.roomId);
-  if (reason) showToast(reason);
+  var dur = callDurationText();
   cleanupCall();
+  if (reason) showToast(reason + dur);
 }
 
 function hangupCall() {
   if (!window.acCall.mode) return;
   if (window.acCall.mode === 'incoming') {
     acInvoke('DeclineCall', window.acCall.roomId);
+    cleanupCall();
+    showToast('Llamada rechazada.');
   } else if (window.acCall.roomId) {
     acInvoke('LeaveCallRoom', window.acCall.roomId);
+    var dur = callDurationText();
+    cleanupCall();
+    showToast('Llamada finalizada.' + dur);
+  } else {
+    cleanupCall();
   }
-  cleanupCall();
 }
 
 function declineIncoming() {
@@ -891,6 +907,10 @@ function registerCallHandlers(hub) {
 
   hub.on('CallUserLeft', function(uid, roomId) {
     if (roomId !== window.acCall.roomId) return;
+    if (!window.acCall.groupCall && uid === window.acCall.peerId) {
+      endCall('La otra persona terminó la llamada.');
+      return;
+    }
     delete window.acCall.memberInfo[uid];
     renderParticipants();
     var peer = window.acCall.peers[uid];
@@ -898,6 +918,9 @@ function registerCallHandlers(hub) {
     delete window.acCall.peers[uid];
     var t = document.getElementById('callTile_' + uid);
     if (t) t.remove();
+    if (Object.keys(window.acCall.peers).length === 0) {
+      endCall(window.acCall.groupCall ? 'La llamada de grupo finalizó.' : 'La otra persona terminó la llamada.');
+    }
   });
 
   hub.on('CallCancelled', function(roomId) {
@@ -931,8 +954,9 @@ function registerCallHandlers(hub) {
 
   hub.on('CallEnded', function(roomId) {
     if (window.acCall.roomId === roomId) {
+      var dur = callDurationText();
       cleanupCall();
-      showToast('La llamada finalizó.');
+      showToast('La llamada finalizó.' + dur);
     }
   });
 }
