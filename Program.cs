@@ -4,8 +4,18 @@ using AeroChat.Services;
 var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddControllersWithViews();
-builder.Services.AddSignalR();
+
+var redis = builder.Configuration.GetConnectionString("Redis");
+if (string.IsNullOrEmpty(redis))
+    builder.Services.AddSignalR();
+else
+    builder.Services.AddSignalR().AddStackExchangeRedis(redis);
+
+builder.Services.AddSingleton<IFileStorage>(sp => new LocalFileStorage(
+    sp.GetRequiredService<IWebHostEnvironment>().WebRootPath,
+    builder.Configuration["Storage:PublicBaseUrl"] ?? ""));
 builder.Services.AddSingleton<DataService>();
+builder.Services.AddHostedService<StatusCleanupService>();
 builder.Services.AddSession(options =>
 {
     options.IdleTimeout = TimeSpan.FromHours(1);

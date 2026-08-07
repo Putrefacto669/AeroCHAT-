@@ -10,14 +10,14 @@ public class StatusController : Controller
 {
     private readonly DataService _data;
     private readonly IHubContext<ChatHub> _hub;
-    private readonly IWebHostEnvironment _env;
+    private readonly IFileStorage _storage;
     private const long MaxImageSize = 20 * 1024 * 1024;
 
-    public StatusController(DataService data, IHubContext<ChatHub> hub, IWebHostEnvironment env)
+    public StatusController(DataService data, IHubContext<ChatHub> hub, IFileStorage storage)
     {
         _data = data;
         _hub = hub;
-        _env = env;
+        _storage = storage;
     }
 
     private string? CurrentUserId => HttpContext.Session.GetString("UserId");
@@ -101,9 +101,6 @@ public class StatusController : Controller
                 TempData["Error"] = "Formato de imagen no válido.";
                 return RedirectToAction("Index");
             }
-            var dir = Path.Combine(_env.WebRootPath, "uploads", "statuses");
-            Directory.CreateDirectory(dir);
-            var safeName = $"{Guid.NewGuid()}{ext}";
 
             var head = new byte[16];
             await using (var src = image.OpenReadStream())
@@ -114,13 +111,17 @@ public class StatusController : Controller
                     TempData["Error"] = "El archivo no es una imagen válida.";
                     return RedirectToAction("Index");
                 }
-                src.Position = 0;
-                await using var dest = new FileStream(Path.Combine(dir, safeName), FileMode.Create);
-                await src.CopyToAsync(dest);
+            }
+
+            var filePath = await _storage.SaveAsync(image, "statuses");
+            if (filePath == null)
+            {
+                TempData["Error"] = "No se pudo guardar la imagen.";
+                return RedirectToAction("Index");
             }
 
             status.Type = StatusType.Image;
-            status.FilePath = $"/uploads/statuses/{safeName}";
+            status.FilePath = filePath;
             status.FileName = image.FileName;
         }
 

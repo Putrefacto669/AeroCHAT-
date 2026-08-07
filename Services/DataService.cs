@@ -10,7 +10,7 @@ public class DataService
     private readonly string _messagesFile;
     private readonly string _groupsFile;
     private readonly string _statusesFile;
-    private readonly string _webRoot;
+    private readonly IFileStorage _storage;
     private readonly JsonSerializerOptions _opts;
     private readonly object _lock = new();
 
@@ -19,14 +19,14 @@ public class DataService
     private readonly List<Group> _groups;
     private readonly List<Status> _statuses;
 
-    public DataService(IWebHostEnvironment env)
+    public DataService(IWebHostEnvironment env, IFileStorage storage)
     {
         _dataPath = Path.Combine(env.ContentRootPath, "Data");
         _usersFile = Path.Combine(_dataPath, "users.json");
         _messagesFile = Path.Combine(_dataPath, "messages.json");
         _groupsFile = Path.Combine(_dataPath, "groups.json");
         _statusesFile = Path.Combine(_dataPath, "statuses.json");
-        _webRoot = env.WebRootPath ?? Path.Combine(env.ContentRootPath, "wwwroot");
+        _storage = storage;
         _opts = new JsonSerializerOptions
         {
             WriteIndented = true,
@@ -313,6 +313,106 @@ public class DataService
         }
     }
 
+    // ── REACTIONS ─────────────────────────────────────────
+    public (Message? Message, bool Added) ToggleReaction(string messageId, string userId, string emoji)
+    {
+        lock (_lock)
+        {
+            var msg = _messages.FirstOrDefault(m => m.Id == messageId && !m.IsDeleted);
+            if (msg == null) return (null, false);
+            var existing = msg.Reactions.FirstOrDefault(r => r.UserId == userId && r.Emoji == emoji);
+            if (existing != null)
+            {
+                msg.Reactions.Remove(existing);
+                SaveList(_messagesFile, _messages);
+                return (msg, false);
+            }
+            msg.Reactions.Add(new Reaction { UserId = userId, Emoji = emoji, CreatedAt = DateTime.UtcNow });
+            SaveList(_messagesFile, _messages);
+            return (msg, true);
+        }
+    }
+
+    // ── READ RECEIPTS / UNREAD ─────────────────────────────
+    public int MarkConversationRead(string userId, string otherId)
+    {
+        lock (_lock)
+        {
+            var count = 0;
+            foreach (var m in _messages.Where(m =>
+                m.Scope == MessageScope.Direct && m.SenderId == otherId && m.ReceiverId == userId &&
+                !m.IsDeleted && !m.ReadBy.Contains(userId)))
+            {
+                m.ReadBy.Add(userId);
+                count++;
+            }
+            if (count > 0) SaveList(_messagesFile, _messages);
+            return count;
+        }
+    }
+
+    public int MarkGroupRead(string userId, string groupId)
+    {
+        lock (_lock)
+        {
+            var count = 0;
+            foreach (var m in _messages.Where(m =>
+                m.Scope == MessageScope.Group && m.ReceiverId == groupId &&
+                m.SenderId != userId &&
+                !m.IsDeleted && !m.ReadBy.Contains(userId)))
+            {
+                m.ReadBy.Add(userId);
+                count++;
+            }
+            if (count > 0) SaveList(_messagesFile, _messages);
+            return count;
+        }
+    }
+
+    public Dictionary<string, int> GetUnreadCounts(string userId)
+    {
+        lock (_lock)
+        {
+            var counts = new Dictionary<string, int>();
+            foreach (var m in _messages.Where(m => !m.IsDeleted && !m.ReadBy.Contains(userId)))
+            {
+                var key = m.Scope == MessageScope.Direct
+                    ? m.SenderId
+                    : m.ReceiverId;
+                if (m.Scope == MessageScope.Direct && m.ReceiverId != userId) continue;
+                if (m.Scope == MessageScope.Direct && m.SenderId == userId) continue;
+                counts[key] = counts.TryGetValue(key, out var c) ? c + 1 : 1;
+            }
+            return counts;
+        }
+    }
+
+    // ── SEARCH ─────────────────────────────────────────────
+    public List<Message> SearchConversation(string userId1, string userId2, string query)
+    {
+        lock (_lock)
+            return _messages
+                .Where(m => !m.IsDeleted && m.Scope == MessageScope.Direct &&
+                    ((m.SenderId == userId1 && m.ReceiverId == userId2) ||
+                     (m.SenderId == userId2 && m.ReceiverId == userId1)) &&
+                    m.Content.Contains(query, StringComparison.OrdinalIgnoreCase))
+                .OrderByDescending(m => m.CreatedAt)
+                .Take(30)
+                .ToList();
+    }
+
+    public List<Message> SearchGroupMessages(string groupId, string query)
+    {
+        lock (_lock)
+            return _messages
+                .Where(m => !m.IsDeleted && m.Scope == MessageScope.Group &&
+                    m.ReceiverId == groupId &&
+                    m.Content.Contains(query, StringComparison.OrdinalIgnoreCase))
+                .OrderByDescending(m => m.CreatedAt)
+                .Take(30)
+                .ToList();
+    }
+
     // ── GROUPS ────────────────────────────────────────
     public List<Group> GetGroups()
     {
@@ -356,6 +456,44 @@ public class DataService
             var g = _groups.FirstOrDefault(x => x.Id == groupId);
             if (g == null || !g.MemberIds.Remove(memberId)) return false;
             if (g.MemberIds.Count == 0) _groups.Remove(g);
+            SaveList(_groupsFile, _groups);
+            return true;
+        }
+    }
+
+    public bool AddGroupMember(string groupId, string userId)
+    {
+        lock (_lock)
+        {
+            var g = _groups.FirstOrDefault(x => x.Id == groupId);
+            if (g == null || g.MemberIds.Contains(userId)) return false;
+            g.MemberIds.Add(userId);
+            SaveList(_groupsFile, _groups);
+            return true;
+        }
+    }
+
+    public bool RenameGroup(string groupId, string newName)
+    {
+        if (string.IsNullOrWhiteSpace(newName)) return false;
+        lock (_lock)
+        {
+            var g = _groups.FirstOrDefault(x => x.Id == groupId);
+            if (g == null) return false;
+            g.Name = newName.Trim();
+            SaveList(_groupsFile, _groups);
+            return true;
+        }
+    }
+
+    public bool UpdateGroupAvatar(string groupId, string? path)
+    {
+        lock (_lock)
+        {
+            var g = _groups.FirstOrDefault(x => x.Id == groupId);
+            if (g == null) return false;
+            DeleteUploadedFile(g.AvatarPath);
+            g.AvatarPath = path;
             SaveList(_groupsFile, _groups);
             return true;
         }
@@ -463,21 +601,25 @@ public class DataService
         }
     }
 
-    // ── FILE CLEANUP ──────────────────────────────────────
-    private void DeleteUploadedFile(string? path)
+    public int CleanupExpiredStatuses()
     {
-        if (string.IsNullOrWhiteSpace(path)) return;
-        try
+        lock (_lock)
         {
-            var full = Path.GetFullPath(Path.Combine(_webRoot, path.TrimStart('/').Replace('/', Path.DirectorySeparatorChar)));
-            if (full.StartsWith(_webRoot, StringComparison.OrdinalIgnoreCase) && File.Exists(full))
-                File.Delete(full);
-        }
-        catch
-        {
-            // best effort
+            var cutoff = DateTime.UtcNow.AddHours(-24);
+            var expired = _statuses.Where(s => s.CreatedAt < cutoff).ToList();
+            if (expired.Count == 0) return 0;
+            foreach (var s in expired)
+            {
+                _statuses.Remove(s);
+                DeleteUploadedFile(s.FilePath);
+            }
+            SaveList(_statusesFile, _statuses);
+            return expired.Count;
         }
     }
+
+    // ── FILE CLEANUP ──────────────────────────────────────
+    private void DeleteUploadedFile(string? path) => _storage.Delete(path);
 
     // ── HELPERS ────────────────────────────────────────────
     public static string? ExtractYoutubeId(string? url)

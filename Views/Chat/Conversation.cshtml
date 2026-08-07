@@ -30,8 +30,18 @@
           </div>
         </div>
       </a>
+      <button class="icon-btn" title="Buscar" onclick="toggleSearch()">🔍</button>
       <button class="icon-btn icon-btn-call" title="Llamada de voz"
               onclick="callFriend('@Model.Recipient.Id','@JavaScriptEncoder.Default.Encode(Model.Recipient.DisplayName)','@Model.Recipient.AvatarPath','@Model.Recipient.AvatarColor')">📞</button>
+    </div>
+
+    <div class="search-panel" id="searchPanel" hidden>
+      <div class="search-panel-head">
+        <span class="search-panel-title">Buscar</span>
+        <input type="text" id="searchInput" placeholder="Buscar en la conversación…" autocomplete="off"/>
+        <button type="button" class="icon-btn" onclick="closeSearch()">✕</button>
+      </div>
+      <div class="search-panel-results" id="searchResults"></div>
     </div>
 
     @if (TempData["Error"] != null)
@@ -74,6 +84,8 @@
         </div>
       </div>
 
+      <div class="reply-bar" id="replyBar"></div>
+
       <div class="send-form" id="sendForm">
         <button type="button" class="icon-btn icon-btn-attach" onclick="toggleAttach()" title="Adjuntar">📎</button>
         <input type="text" id="msgInput" placeholder="Mensaje…" autocomplete="off" class="msg-input"/>
@@ -97,6 +109,9 @@
     var isMine = msg.SenderId == me.Id;
     var side = isMine ? "mine" : "theirs";
     var sender = isMine ? me : them;
+    var preview = msg.Type == MessageType.Text
+        ? (msg.Content.Length > 40 ? msg.Content.Substring(0, 40) + "…" : msg.Content)
+        : "[" + msg.Type.ToString().ToLower() + "]";
 
     <div class="msg-row @side" data-id="@msg.Id">
       @if (!isMine)
@@ -114,6 +129,13 @@
       }
 
       <div class="bubble @side @(msg.IsDeleted ? "deleted" : "") @msg.Type.ToString().ToLower()">
+        @if (!string.IsNullOrEmpty(msg.ReplyToId))
+        {
+          <div class="msg-reply">
+            <span class="msg-reply-sender">@JavaScriptEncoder.Default.Encode(msg.ReplyToSender ?? "")</span>
+            <span class="msg-reply-content">@JavaScriptEncoder.Default.Encode(msg.ReplyToContent ?? "")</span>
+          </div>
+        }
         @if (msg.Type == MessageType.Text)
         {
           <span class="msg-text">@msg.Content</span>
@@ -150,16 +172,35 @@
         <div class="msg-meta">
           @if (msg.EditedAt.HasValue) { <span class="msg-edited">editado</span> }
           <span class="msg-time">@msg.CreatedAt.ToString("HH:mm")</span>
+          @if (isMine && !msg.IsDeleted)
+          {
+            <span class="msg-seen">@(msg.ReadBy.Contains(them.Id) ? "✓✓" : "✓")</span>
+          }
         </div>
 
-        @if (isMine && !msg.IsDeleted)
+        @if (!msg.IsDeleted)
         {
-          <div class="msg-actions">
-            @if (msg.Type == MessageType.Text)
+          <div class="msg-reactions">
+            @foreach (var grp in msg.Reactions.GroupBy(r => r.Emoji))
             {
-              <button class="action-btn" onclick="openEdit('@msg.Id','@JavaScriptEncoder.Default.Encode(msg.Content)')">✏</button>
+              var mine = grp.Any(r => r.UserId == me.Id);
+              <button class="reaction-chip@(mine ? " mine" : "")" data-emoji="@grp.Key" onclick="toggleReaction('@msg.Id','@grp.Key')">
+                <span class="rc-emoji">@grp.Key</span><span class="rc-count">@grp.Count()</span>
+              </button>
             }
-            <button class="action-btn del" onclick="confirmDelete('@msg.Id')">🗑</button>
+            <button class="reaction-add" title="Reaccionar" onclick="openReactionPicker('@msg.Id', event)">＋</button>
+          </div>
+
+          <div class="msg-actions">
+            <button class="action-btn" title="Responder" onclick="respondTo('@msg.Id','@JavaScriptEncoder.Default.Encode(msg.SenderName)','@JavaScriptEncoder.Default.Encode(preview)')">↩</button>
+            @if (isMine)
+            {
+              @if (msg.Type == MessageType.Text)
+              {
+                <button class="action-btn" onclick="openEdit('@msg.Id','@JavaScriptEncoder.Default.Encode(msg.Content)')">✏</button>
+              }
+              <button class="action-btn del" onclick="confirmDelete('@msg.Id')">🗑</button>
+            }
           </div>
         }
       </div>
@@ -215,12 +256,15 @@
   var theirAvatar = '@Model.Recipient.AvatarPath';
   var theirStatus = '@JavaScriptEncoder.Default.Encode(!string.IsNullOrEmpty(Model.Recipient.Status) ? Model.Recipient.Status : ("@" + Model.Recipient.Username))';
   var typingTimer = null;
+  var replyTo = null;
 
   // ── Chat handlers (hub global) ──
   function registerChatHandlers(hub) {
     hub.on('ReceiveMessage', function (msg) {
       addMessage(msg);
       scrollToBottom();
+      acInvoke('MarkRead', recipientId);
+      refreshSidebar();
     });
 
     hub.on('MessageEdited', function (messageId, newContent, editedAt) {
@@ -242,11 +286,26 @@
       if (!el) return;
       var actions = el.querySelector('.msg-actions');
       if (actions) actions.remove();
+      var reactions = el.querySelector('.msg-reactions');
+      if (reactions) reactions.remove();
       var bubble = el.querySelector('.bubble');
       if (bubble) {
         bubble.classList.add('deleted');
         bubble.innerHTML = '<span class="msg-text">Mensaje eliminado</span><div class="msg-meta"></div>';
       }
+    });
+
+    hub.on('MessageReacted', function (messageId, emoji, userId, added, count) {
+      applyReaction(messageId, emoji, userId, added, count);
+    });
+
+    hub.on('MessagesRead', function (readerId, otherId) {
+      if (readerId !== recipientId) return;
+      document.querySelectorAll('.msg-row.mine .msg-seen').forEach(function (s) { s.textContent = '✓✓'; });
+    });
+
+    hub.on('SearchResults', function (results) {
+      renderSearchResults(results || []);
     });
 
     hub.on('UserTyping', function (userId, displayName) {
@@ -276,6 +335,8 @@
   function joinConversation() {
     if (window.acHub) {
       window.acHub.invoke('JoinConversation', recipientId).catch(function () {});
+      acInvoke('MarkRead', recipientId);
+      refreshSidebar();
     }
   }
   document.addEventListener('ac:hubconnected', joinConversation);
@@ -307,7 +368,87 @@
     var content = input.value.trim();
     if (!content) return;
     input.value = '';
-    acInvoke('SendMessage', recipientId, content);
+    var rid = replyTo ? replyTo.id : null;
+    acInvoke('SendMessage', recipientId, content, rid);
+    cancelReply();
+  }
+
+  // ── Responder (citar) ──
+  function respondTo(id, name, content) {
+    replyTo = { id: id, name: name, content: content };
+    var bar = document.getElementById('replyBar');
+    if (!bar) return;
+    bar.innerHTML = '<span class="reply-bar-label">↩ ' + htmlEncode(name) + '</span>'
+      + '<span class="reply-bar-content">' + htmlEncode(content) + '</span>'
+      + '<button type="button" class="reply-bar-close" onclick="cancelReply()">✕</button>';
+    bar.classList.add('active');
+    document.getElementById('msgInput').focus();
+  }
+  function cancelReply() {
+    replyTo = null;
+    var bar = document.getElementById('replyBar');
+    if (bar) {
+      bar.classList.remove('active');
+      bar.innerHTML = '';
+    }
+  }
+
+  // ── Reacciones ──
+  function toggleReaction(messageId, emoji) {
+    acInvoke('ReactToMessage', messageId, recipientId, emoji);
+  }
+  function openReactionPicker(messageId, ev) {
+    if (ev) ev.stopPropagation();
+    var row = document.querySelector('.msg-row[data-id="' + messageId + '"]');
+    if (!row) return;
+    var existing = row.querySelector('.reaction-picker');
+    if (existing) { existing.remove(); return; }
+    var bar = document.createElement('div');
+    bar.className = 'reaction-picker';
+    ['👍','❤️','😂','😮','🙏'].forEach(function (e) {
+      var b = document.createElement('button');
+      b.type = 'button';
+      b.textContent = e;
+      b.className = 'reaction-pick';
+      b.onclick = function () { bar.remove(); toggleReaction(messageId, e); };
+      bar.appendChild(b);
+    });
+    var bubble = row.querySelector('.bubble');
+    if (bubble) bubble.appendChild(bar);
+  }
+  function applyReaction(messageId, emoji, userId, added, count) {
+    var row = document.querySelector('.msg-row[data-id="' + messageId + '"]');
+    if (!row) return;
+    var chip = row.querySelector('.reaction-chip[data-emoji="' + emoji + '"]');
+    var mine = userId === currentUserId;
+    if (added) {
+      if (chip) {
+        chip.querySelector('.rc-count').textContent = count;
+        chip.classList.toggle('mine', mine);
+      } else {
+        var btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'reaction-chip' + (mine ? ' mine' : '');
+        btn.setAttribute('data-emoji', emoji);
+        btn.innerHTML = '<span class="rc-emoji">' + emoji + '</span><span class="rc-count">' + count + '</span>';
+        btn.onclick = function () { toggleReaction(messageId, emoji); };
+        var wrap = row.querySelector('.msg-reactions');
+        if (!wrap) {
+          wrap = document.createElement('div');
+          wrap.className = 'msg-reactions';
+          var b = row.querySelector('.bubble');
+          if (b) b.appendChild(wrap);
+        }
+        if (wrap) wrap.appendChild(btn);
+      }
+    } else if (chip) {
+      if (count > 0) {
+        chip.querySelector('.rc-count').textContent = count;
+        chip.classList.toggle('mine', mine);
+      } else {
+        chip.remove();
+      }
+    }
   }
 
   // ── Add message to DOM ──
@@ -319,7 +460,6 @@
     var isMine = msg.senderId === currentUserId;
     var side = isMine ? 'mine' : 'theirs';
 
-    // Date divider (hora local, igual que el servidor)
     var created = new Date(msg.createdAt);
     var dateKey = localDateKey(created);
     var lastDivider = area.querySelector('.date-divider:last-child');
@@ -341,6 +481,12 @@
       }
     }
 
+    var replyHtml = '';
+    if (msg.replyToId) {
+      replyHtml = '<div class="msg-reply"><span class="msg-reply-sender">' + htmlEncode(msg.replyToSender || '') + '</span>'
+        + '<span class="msg-reply-content">' + htmlEncode(msg.replyToContent || '') + '</span></div>';
+    }
+
     var innerHtml = '';
     switch (normalizeType(msg.type)) {
       case 0: // Text
@@ -360,16 +506,41 @@
         break;
     }
 
-    var metaHtml = '<div class="msg-meta"><span class="msg-time">' + formatTime(msg.createdAt) + '</span></div>';
+    var seenHtml = '';
+    if (isMine) {
+      var seen = msg.readBy && msg.readBy.indexOf(recipientId) >= 0;
+      seenHtml = '<span class="msg-seen">' + (seen ? '✓✓' : '✓') + '</span>';
+    }
+    var metaHtml = '<div class="msg-meta"><span class="msg-time">' + formatTime(msg.createdAt) + '</span>' + seenHtml + '</div>';
+
+    var reactionsHtml = '';
+    if (!msg.isDeleted && msg.reactions && msg.reactions.length) {
+      var grouped = {};
+      msg.reactions.forEach(function (r) { grouped[r.emoji] = (grouped[r.emoji] || 0) + 1; });
+      var mineSet = {};
+      msg.reactions.forEach(function (r) { if (r.userId === currentUserId) mineSet[r.emoji] = 1; });
+      reactionsHtml = '<div class="msg-reactions">';
+      Object.keys(grouped).forEach(function (e) {
+        reactionsHtml += '<button class="reaction-chip' + (mineSet[e] ? ' mine' : '') + '" data-emoji="' + e + '" onclick="toggleReaction(\'' + msg.id + '\',\'' + e + '\')"><span class="rc-emoji">' + e + '</span><span class="rc-count">' + grouped[e] + '</span></button>';
+      });
+      reactionsHtml += '<button class="reaction-add" title="Reaccionar" onclick="openReactionPicker(\'' + msg.id + '\', event)">＋</button></div>';
+    }
+
     var actionsHtml = '';
-    if (isMine && !msg.isDeleted) {
-      var editBtn = msg.type === 0 ? '<button class="action-btn" onclick="openEdit(\'' + msg.id + '\',\'' + jsEncode(msg.content) + '\')">✏</button>' : '';
-      actionsHtml = '<div class="msg-actions">' + editBtn + '<button class="action-btn del" onclick="confirmDelete(\'' + msg.id + '\')">🗑</button></div>';
+    if (!msg.isDeleted) {
+      var preview = msg.type === 0 ? String(msg.content || '').slice(0, 40) : '[' + typeName(msg.type) + ']';
+      actionsHtml = '<div class="msg-actions">'
+        + '<button class="action-btn" title="Responder" onclick="respondTo(\'' + msg.id + '\',\'' + jsEncode(msg.senderName || '') + '\',\'' + jsEncode(preview) + '\')">↩</button>';
+      if (isMine) {
+        var editBtn = msg.type === 0 ? '<button class="action-btn" onclick="openEdit(\'' + msg.id + '\',\'' + jsEncode(msg.content) + '\')">✏</button>' : '';
+        actionsHtml += editBtn + '<button class="action-btn del" onclick="confirmDelete(\'' + msg.id + '\')">🗑</button>';
+      }
+      actionsHtml += '</div>';
     }
 
     var bubble = document.createElement('div');
     bubble.className = 'bubble ' + side;
-    bubble.innerHTML = innerHtml + metaHtml + actionsHtml;
+    bubble.innerHTML = replyHtml + innerHtml + metaHtml + reactionsHtml + actionsHtml;
 
     var row = document.createElement('div');
     row.className = 'msg-row ' + side;
@@ -377,6 +548,53 @@
     row.innerHTML = avatarHtml;
     row.appendChild(bubble);
     area.appendChild(row);
+  }
+
+  // ── Buscar en la conversación ──
+  var searchTimer = null;
+  function toggleSearch() {
+    var panel = document.getElementById('searchPanel');
+    var open = panel.hidden;
+    panel.hidden = !open;
+    if (open) {
+      document.getElementById('searchInput').value = '';
+      renderSearchResults([]);
+      document.getElementById('searchInput').focus();
+    }
+  }
+  function closeSearch() {
+    document.getElementById('searchPanel').hidden = true;
+    document.getElementById('searchInput').value = '';
+  }
+  document.addEventListener('DOMContentLoaded', function () {
+    var inp = document.getElementById('searchInput');
+    if (!inp) return;
+    inp.addEventListener('input', function () {
+      clearTimeout(searchTimer);
+      var q = inp.value.trim();
+      if (!q) { renderSearchResults([]); return; }
+      searchTimer = setTimeout(function () { acInvoke('SearchMessages', recipientId, q); }, 300);
+    });
+    inp.addEventListener('keydown', function (e) { if (e.key === 'Escape') closeSearch(); });
+  });
+  function renderSearchResults(results) {
+    var box = document.getElementById('searchResults');
+    if (!box) return;
+    if (!results.length) { box.innerHTML = '<div class="search-empty">Sin resultados</div>'; return; }
+    box.innerHTML = results.map(function (m) {
+      return '<div class="search-result" onclick="goToMessage(\'' + m.id + '\')">'
+        + '<span class="search-result-name">' + htmlEncode(m.senderName || '') + '</span>'
+        + '<span class="search-result-text">' + htmlEncode(m.content || '') + '</span>'
+        + '<span class="search-result-time">' + formatTime(m.createdAt) + '</span></div>';
+    }).join('');
+  }
+  function goToMessage(id) {
+    closeSearch();
+    var row = document.querySelector('.msg-row[data-id="' + id + '"]');
+    if (!row) return;
+    row.scrollIntoView({ block: 'center' });
+    row.classList.add('flash');
+    setTimeout(function () { row.classList.remove('flash'); }, 1600);
   }
 
   // ── Edit / Delete via SignalR ──
@@ -423,6 +641,10 @@
       case 'video': return 4;
       default: return 3;
     }
+  }
+
+  function typeName(t) {
+    return normalizeType(t) === 0 ? 'texto' : (normalizeType(t) === 1 ? 'imagen' : (normalizeType(t) === 2 ? 'audio' : (normalizeType(t) === 4 ? 'video' : 'archivo')));
   }
 
   function scrollToBottom() {

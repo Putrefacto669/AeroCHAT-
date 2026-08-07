@@ -138,13 +138,24 @@ public class ChatHub : Hub
         await Groups.RemoveFromGroupAsync(Context.ConnectionId, group);
     }
 
-    public async Task SendMessage(string receiverId, string content)
+    public async Task SendMessage(string receiverId, string content, string? replyToId = null)
     {
         var uid = UserId;
         if (uid == null || string.IsNullOrWhiteSpace(content)) return;
 
         var sender = _data.GetUserById(uid);
         if (sender == null) return;
+
+        string? replyContent = null, replySender = null;
+        if (!string.IsNullOrEmpty(replyToId))
+        {
+            var orig = _data.GetMessages().FirstOrDefault(m => m.Id == replyToId && !m.IsDeleted);
+            if (orig != null)
+            {
+                replyContent = orig.Type == MessageType.Text ? orig.Content : "[" + orig.Type.ToString().ToLower() + "]";
+                replySender = orig.SenderName;
+            }
+        }
 
         var msg = _data.AddMessage(new Message
         {
@@ -154,11 +165,43 @@ public class ChatHub : Hub
             ReceiverId = receiverId,
             Content = content.Trim(),
             Type = MessageType.Text,
-            CreatedAt = DateTime.UtcNow
+            CreatedAt = DateTime.UtcNow,
+            ReplyToId = replyToId,
+            ReplyToContent = replyContent,
+            ReplyToSender = replySender
         });
 
         var group = GroupStatic(uid, receiverId);
         await Clients.Group(group).SendAsync("ReceiveMessage", msg);
+    }
+
+    public async Task ReactToMessage(string messageId, string receiverId, string emoji)
+    {
+        var uid = UserId;
+        if (uid == null || string.IsNullOrWhiteSpace(emoji)) return;
+
+        var (msg, added) = _data.ToggleReaction(messageId, uid, emoji);
+        if (msg == null) return;
+
+        var count = msg.Reactions.Count(r => r.Emoji == emoji);
+        var group = GroupStatic(uid, receiverId);
+        await Clients.Group(group).SendAsync("MessageReacted", messageId, emoji, uid, added, count);
+    }
+
+    public async Task MarkRead(string receiverId)
+    {
+        var uid = UserId;
+        if (uid == null) return;
+        if (_data.MarkConversationRead(uid, receiverId) == 0) return;
+        await Clients.Others.SendAsync("MessagesRead", uid, receiverId);
+    }
+
+    public async Task SearchMessages(string receiverId, string query)
+    {
+        var uid = UserId;
+        if (uid == null || string.IsNullOrWhiteSpace(query)) return;
+        var results = _data.SearchConversation(uid, receiverId, query.Trim());
+        await Clients.Caller.SendAsync("SearchResults", results);
     }
 
     public async Task EditMessage(string messageId, string receiverId, string newContent)
@@ -275,13 +318,16 @@ public class ChatHub : Hub
     }
 
     // ── Group chat ────────────────────────────────────
-    private static string GroupGroup(string groupId) => $"grp_{groupId}";
+    public static string GroupGroupStatic(string groupId) => $"grp_{groupId}";
+
+    public static async Task BroadcastToGroup(IHubContext<ChatHub> ctx, string groupId, string method, object? arg)
+        => await ctx.Clients.Group(GroupGroupStatic(groupId)).SendAsync(method, arg);
 
     public async Task JoinGroup(string groupId)
     {
         var uid = UserId;
         if (uid == null || !_data.IsGroupMember(groupId, uid)) return;
-        await Groups.AddToGroupAsync(Context.ConnectionId, GroupGroup(groupId));
+        await Groups.AddToGroupAsync(Context.ConnectionId, GroupGroupStatic(groupId));
     }
 
     public async Task CreateGroup(string name, List<string> memberIds)
@@ -301,7 +347,7 @@ public class ChatHub : Hub
         await Clients.Caller.SendAsync("GroupCreatedSelf", group);
     }
 
-    public async Task SendGroupMessage(string groupId, string content)
+    public async Task SendGroupMessage(string groupId, string content, string? replyToId = null)
     {
         var uid = UserId;
         if (uid == null || string.IsNullOrWhiteSpace(content)) return;
@@ -309,6 +355,17 @@ public class ChatHub : Hub
 
         var sender = _data.GetUserById(uid);
         if (sender == null) return;
+
+        string? replyContent = null, replySender = null;
+        if (!string.IsNullOrEmpty(replyToId))
+        {
+            var orig = _data.GetMessages().FirstOrDefault(m => m.Id == replyToId && !m.IsDeleted);
+            if (orig != null)
+            {
+                replyContent = orig.Type == MessageType.Text ? orig.Content : "[" + orig.Type.ToString().ToLower() + "]";
+                replySender = orig.SenderName;
+            }
+        }
 
         var msg = _data.AddGroupMessage(new Message
         {
@@ -318,9 +375,43 @@ public class ChatHub : Hub
             ReceiverId = groupId,
             Content = content.Trim(),
             Type = MessageType.Text,
-            CreatedAt = DateTime.UtcNow
+            CreatedAt = DateTime.UtcNow,
+            ReplyToId = replyToId,
+            ReplyToContent = replyContent,
+            ReplyToSender = replySender
         });
-        await Clients.Group(GroupGroup(groupId)).SendAsync("ReceiveGroupMessage", msg);
+        await Clients.Group(GroupGroupStatic(groupId)).SendAsync("ReceiveGroupMessage", msg);
+    }
+
+    public async Task ReactToGroupMessage(string groupId, string messageId, string emoji)
+    {
+        var uid = UserId;
+        if (uid == null || string.IsNullOrWhiteSpace(emoji)) return;
+        if (!_data.IsGroupMember(groupId, uid)) return;
+
+        var (msg, added) = _data.ToggleReaction(messageId, uid, emoji);
+        if (msg == null) return;
+
+        var count = msg.Reactions.Count(r => r.Emoji == emoji);
+        await Clients.Group(GroupGroupStatic(groupId)).SendAsync(
+            "GroupMessageReacted", messageId, emoji, uid, added, count);
+    }
+
+    public async Task MarkGroupRead(string groupId)
+    {
+        var uid = UserId;
+        if (uid == null || !_data.IsGroupMember(groupId, uid)) return;
+        if (_data.MarkGroupRead(uid, groupId) == 0) return;
+        await Clients.Group(GroupGroupStatic(groupId)).SendAsync("GroupMessagesRead", uid, groupId);
+    }
+
+    public async Task SearchGroupMessages(string groupId, string query)
+    {
+        var uid = UserId;
+        if (uid == null || string.IsNullOrWhiteSpace(query)) return;
+        if (!_data.IsGroupMember(groupId, uid)) return;
+        var results = _data.SearchGroupMessages(groupId, query.Trim());
+        await Clients.Caller.SendAsync("GroupSearchResults", results);
     }
 
     public async Task EditGroupMessage(string groupId, string messageId, string newContent)
@@ -328,7 +419,7 @@ public class ChatHub : Hub
         var uid = UserId;
         if (uid == null || string.IsNullOrWhiteSpace(newContent)) return;
         if (!_data.EditGroupMessage(groupId, messageId, uid, newContent.Trim())) return;
-        await Clients.Group(GroupGroup(groupId)).SendAsync(
+        await Clients.Group(GroupGroupStatic(groupId)).SendAsync(
             "GroupMessageEdited", messageId, newContent.Trim(), DateTime.UtcNow);
     }
 
@@ -337,31 +428,31 @@ public class ChatHub : Hub
         var uid = UserId;
         if (uid == null) return;
         if (!_data.DeleteGroupMessage(groupId, messageId, uid)) return;
-        await Clients.Group(GroupGroup(groupId)).SendAsync("GroupMessageDeleted", messageId);
+        await Clients.Group(GroupGroupStatic(groupId)).SendAsync("GroupMessageDeleted", messageId);
     }
 
     public async Task GroupTyping(string groupId, string displayName)
     {
         var uid = UserId;
         if (uid == null) return;
-        await Clients.OthersInGroup(GroupGroup(groupId)).SendAsync("GroupUserTyping", uid, displayName);
+        await Clients.OthersInGroup(GroupGroupStatic(groupId)).SendAsync("GroupUserTyping", uid, displayName);
     }
 
     public async Task GroupStopTyping(string groupId)
     {
         var uid = UserId;
         if (uid == null) return;
-        await Clients.OthersInGroup(GroupGroup(groupId)).SendAsync("GroupUserStoppedTyping", uid);
+        await Clients.OthersInGroup(GroupGroupStatic(groupId)).SendAsync("GroupUserStoppedTyping", uid);
     }
 
     public async Task LeaveGroup(string groupId)
     {
         var uid = UserId;
         if (uid == null) return;
-        await Groups.RemoveFromGroupAsync(Context.ConnectionId, GroupGroup(groupId));
+        await Groups.RemoveFromGroupAsync(Context.ConnectionId, GroupGroupStatic(groupId));
         if (_data.RemoveMemberFromGroup(groupId, uid))
         {
-            await Clients.Group(GroupGroup(groupId)).SendAsync("GroupMemberLeft", uid, groupId);
+            await Clients.Group(GroupGroupStatic(groupId)).SendAsync("GroupMemberLeft", uid, groupId);
             await Clients.Caller.SendAsync("GroupLeft", groupId);
         }
     }

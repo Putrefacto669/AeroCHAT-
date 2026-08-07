@@ -1,3 +1,4 @@
+@inject AeroChat.Services.DataService data
 @{
   var currentUser = ViewBag.SidebarUser as AeroChat.Models.User;
   var items = ViewBag.SidebarItems as List<AeroChat.Models.SidebarUserItem>;
@@ -8,6 +9,8 @@
   var requests = items.Where(i => i.State == "incoming").OrderBy(i => i.User.DisplayName).ToList();
   var discover = items.Where(i => i.State == "none" || i.State == "outgoing")
                       .OrderBy(i => i.User.DisplayName).ToList();
+  var unread = data.GetUnreadCounts(currentUser.Id);
+  var totalUnread = unread.Sum(kv => kv.Value);
 }
 
 <aside class="sidebar" id="sidebar">
@@ -78,6 +81,10 @@
 
   <div class="sidebar-section-label">
     Amigos <span class="count" id="friendCount">@friends.Count</span>
+    @if (totalUnread > 0)
+    {
+      <span class="unread-badge">@totalUnread</span>
+    }
   </div>
   <div class="user-list sidebar-list" id="friendList">
     @if (!friends.Any())
@@ -87,6 +94,7 @@
     @foreach (var f in friends)
     {
       var cls = f.User.Id == activeId ? "user-item active" : "user-item";
+      unread.TryGetValue(f.User.Id, out var unreadCount);
       <a href="/Chat/Conversation/@f.User.Id" class="@cls">
         @if (!string.IsNullOrEmpty(f.User.AvatarPath))
         {
@@ -106,6 +114,10 @@
           <span class="user-item-name">@f.User.DisplayName</span>
           <span class="user-item-sub">@(!string.IsNullOrEmpty(f.User.Status) ? f.User.Status : $"@{f.User.Username}")</span>
         </div>
+        @if (unreadCount > 0)
+        {
+          <span class="unread-badge">@unreadCount</span>
+        }
       </a>
     }
   </div>
@@ -123,12 +135,26 @@
     {
       var color = $"#{Math.Abs(g.Name.GetHashCode()) % 0xFFFFFF:X6}";
       var gCls = activeId == $"/Group/Conversation/{g.Id}" ? "user-item active" : "user-item";
+      unread.TryGetValue(g.Id, out var groupUnread);
       <a href="/Group/Conversation/@g.Id" class="@gCls">
-        <span class="group-avatar" style="background:@color">@(g.Name.Length > 0 ? g.Name[0].ToString().ToUpperInvariant() : "?")</span>
+        <span class="group-avatar" style="background:@color">
+          @if (!string.IsNullOrEmpty(g.AvatarPath))
+          {
+            <img src="@g.AvatarPath" class="group-avatar-img" alt=""/>
+          }
+          else
+          {
+            @(g.Name.Length > 0 ? g.Name[0].ToString().ToUpperInvariant() : "?")
+          }
+        </span>
         <div class="user-item-info">
           <span class="user-item-name">@g.Name</span>
           <span class="user-item-sub">@g.MemberIds.Count @(g.MemberIds.Count == 1 ? "miembro" : "miembros")</span>
         </div>
+        @if (groupUnread > 0)
+        {
+          <span class="unread-badge">@groupUnread</span>
+        }
       </a>
     }
   </div>

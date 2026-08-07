@@ -7,13 +7,13 @@ namespace AeroChat.Controllers;
 public class ProfileController : Controller
 {
     private readonly DataService _data;
-    private readonly IWebHostEnvironment _env;
+    private readonly IFileStorage _storage;
     private const long MaxFileSize = 5 * 1024 * 1024;
 
-    public ProfileController(DataService data, IWebHostEnvironment env)
+    public ProfileController(DataService data, IFileStorage storage)
     {
         _data = data;
-        _env = env;
+        _storage = storage;
     }
 
     private string? CurrentUserId => HttpContext.Session.GetString("UserId");
@@ -112,6 +112,7 @@ public class ProfileController : Controller
             var path = await SaveImage(avatarFile, "avatars");
             if (path != null)
             {
+                _storage.Delete(user.AvatarPath);
                 user.AvatarPath = path;
                 _data.UpdateUser(user);
             }
@@ -133,6 +134,7 @@ public class ProfileController : Controller
             var path = await SaveImage(bannerFile, "banners");
             if (path != null)
             {
+                _storage.Delete(user.BannerPath);
                 user.BannerPath = path;
                 _data.UpdateUser(user);
             }
@@ -147,21 +149,13 @@ public class ProfileController : Controller
         if (UploadValidation.IsBlockedExtension(ext) || !UploadValidation.IsImageExtension(ext))
             return null;
 
-        var dir = Path.Combine(_env.WebRootPath, "uploads", folder);
-        Directory.CreateDirectory(dir);
-        var name = $"{Guid.NewGuid()}{ext}";
-        var fullPath = Path.Combine(dir, name);
-
         var head = new byte[16];
         await using (var src = file.OpenReadStream())
         {
             var n = await src.ReadAsync(head, 0, head.Length);
             if (n == 0 || !UploadValidation.HasValidImageSignature(ext, head.AsSpan(0, n).ToArray()))
                 return null;
-            src.Position = 0;
-            await using var dest = new FileStream(fullPath, FileMode.Create);
-            await src.CopyToAsync(dest);
         }
-        return $"/uploads/{folder}/{name}";
+        return await _storage.SaveAsync(file, folder);
     }
 }

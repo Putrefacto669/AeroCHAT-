@@ -1,7 +1,15 @@
 @model GroupViewModel
+@inject AeroChat.Services.DataService data
 @{
   ViewData["Title"] = "Grupo — " + Model.Group.Name;
+  var isOwner = Model.Group.OwnerId == Model.CurrentUser.Id;
   var groupColor = $"#{Math.Abs(Model.Group.Name.GetHashCode()) % 0xFFFFFF:X6}";
+  var candidates = data.GetFriendIds(Model.CurrentUser.Id)
+    .Select(data.GetUserById)
+    .Where(u => u != null && !Model.Group.MemberIds.Contains(u.Id))
+    .Select(u => u!)
+    .OrderBy(u => u.DisplayName)
+    .ToList();
   var c = System.Globalization.CultureInfo.GetCultureInfo("es-GT");
 }
 
@@ -11,14 +19,37 @@
   <div class="chat-main">
     <div class="chat-header">
       <button class="hamburger" onclick="openSidebar()" aria-label="Menú">☰</button>
-      <span class="group-avatar group-avatar-lg" style="background:@groupColor">@(Model.Group.Name.Length > 0 ? Model.Group.Name[0].ToString().ToUpperInvariant() : "?")</span>
+      <span class="group-avatar group-avatar-lg" style="background:@groupColor">
+        @if (!string.IsNullOrEmpty(Model.Group.AvatarPath))
+        {
+          <img src="@Model.Group.AvatarPath" class="group-avatar-img" alt=""/>
+        }
+        else
+        {
+          @(Model.Group.Name.Length > 0 ? Model.Group.Name[0].ToString().ToUpperInvariant() : "?")
+        }
+      </span>
       <div class="chat-header-info">
         <div class="chat-header-name">@Model.Group.Name</div>
         <div class="chat-header-sub" id="headerSub">
           <span id="memberCount">@Model.Members.Count miembros</span> · <span id="onlineCount">0</span> en línea
         </div>
       </div>
+      <button class="icon-btn" title="Buscar" onclick="toggleSearch()">🔍</button>
+      @if (isOwner)
+      {
+        <button class="icon-btn" title="Administrar grupo" onclick="openModal('manageGroupModal')">⚙</button>
+      }
       <button class="btn btn-ghost btn-leave-group" onclick="leaveGroup('@Model.Group.Id')">Salir</button>
+    </div>
+
+    <div class="search-panel" id="searchPanel" hidden>
+      <div class="search-panel-head">
+        <span class="search-panel-title">Buscar</span>
+        <input type="text" id="searchInput" placeholder="Buscar en el grupo…" autocomplete="off"/>
+        <button type="button" class="icon-btn" onclick="closeSearch()">✕</button>
+      </div>
+      <div class="search-panel-results" id="searchResults"></div>
     </div>
 
     <div class="members-strip" id="membersStrip">
@@ -60,7 +91,31 @@
     </div>
 
     <div class="input-area">
+      <div class="attach-panel" id="attachPanel">
+        <div class="attach-options">
+          <form method="post" action="/Group/SendFile" enctype="multipart/form-data">
+            <input type="hidden" name="id" value="@Model.Group.Id"/>
+            <label class="attach-opt">🖼 Imagen<input type="file" name="file" accept="image/*" onchange="this.form.submit()"/></label>
+          </form>
+          <form method="post" action="/Group/SendFile" enctype="multipart/form-data">
+            <input type="hidden" name="id" value="@Model.Group.Id"/>
+            <label class="attach-opt">🎵 Audio<input type="file" name="file" accept="audio/*" onchange="this.form.submit()"/></label>
+          </form>
+          <form method="post" action="/Group/SendFile" enctype="multipart/form-data">
+            <input type="hidden" name="id" value="@Model.Group.Id"/>
+            <label class="attach-opt">🎬 Video<input type="file" name="file" accept="video/*" onchange="this.form.submit()"/></label>
+          </form>
+          <form method="post" action="/Group/SendFile" enctype="multipart/form-data">
+            <input type="hidden" name="id" value="@Model.Group.Id"/>
+            <label class="attach-opt">📄 Documento<input type="file" name="file" accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.zip" onchange="this.form.submit()"/></label>
+          </form>
+        </div>
+      </div>
+
+      <div class="reply-bar" id="replyBar"></div>
+
       <div class="send-form" id="sendForm">
+        <button type="button" class="icon-btn icon-btn-attach" onclick="toggleAttach()" title="Adjuntar">📎</button>
         <input type="text" id="msgInput" placeholder="Mensaje al grupo…" autocomplete="off" class="msg-input"/>
         <button class="icon-btn icon-btn-send" id="sendBtn" title="Enviar">➤</button>
       </div>
@@ -81,9 +136,19 @@
 
     var isMine = msg.SenderId == me.Id;
     var side = isMine ? "mine" : "theirs";
+    var preview = msg.Type == MessageType.Text
+        ? (msg.Content.Length > 40 ? msg.Content.Substring(0, 40) + "…" : msg.Content)
+        : "[" + msg.Type.ToString().ToLower() + "]";
 
     <div class="msg-row @side" data-id="@msg.Id">
-      <div class="bubble @side @(msg.IsDeleted ? "deleted" : "") text">
+      <div class="bubble @side @(msg.IsDeleted ? "deleted" : "") @msg.Type.ToString().ToLower()">
+        @if (!string.IsNullOrEmpty(msg.ReplyToId))
+        {
+          <div class="msg-reply">
+            <span class="msg-reply-sender">@JavaScriptEncoder.Default.Encode(msg.ReplyToSender ?? "")</span>
+            <span class="msg-reply-content">@JavaScriptEncoder.Default.Encode(msg.ReplyToContent ?? "")</span>
+          </div>
+        }
         @if (!isMine)
         {
           <span class="msg-sender" style="color:@msg.SenderColor">@msg.SenderName</span>
@@ -92,18 +157,67 @@
         {
           <span class="msg-text">@msg.Content</span>
         }
+        else if (msg.Type == MessageType.Image)
+        {
+          <img src="@msg.FilePath" alt="@msg.FileName" class="msg-image" onclick="openLightbox(this)"/>
+        }
+        else if (msg.Type == MessageType.Audio)
+        {
+          <div class="msg-audio">
+            <span class="file-icon">🎵</span>
+            <div><div class="file-name">@msg.FileName</div><audio controls src="@msg.FilePath"></audio></div>
+          </div>
+        }
+        else if (msg.Type == MessageType.Video)
+        {
+          <div class="msg-video">
+            <video controls preload="metadata" src="@msg.FilePath"></video>
+            <div class="file-name">@msg.FileName</div>
+          </div>
+        }
+        else
+        {
+          <div class="msg-doc">
+            <span class="file-icon">📄</span>
+            <div>
+              <div class="file-name">@msg.FileName</div>
+              <a href="@msg.FilePath" download="@msg.FileName" class="file-download">Descargar</a>
+            </div>
+          </div>
+        }
+
         <div class="msg-meta">
           @if (msg.EditedAt.HasValue) { <span class="msg-edited">editado</span> }
           <span class="msg-time">@msg.CreatedAt.ToString("HH:mm")</span>
+          @if (isMine && !msg.IsDeleted)
+          {
+            <span class="msg-seen">@(msg.ReadBy.Count > 0 ? "✓✓" : "✓")</span>
+          }
         </div>
-        @if (isMine && !msg.IsDeleted)
+
+        @if (!msg.IsDeleted)
         {
-          <div class="msg-actions">
-            @if (msg.Type == MessageType.Text)
+          <div class="msg-reactions">
+            @foreach (var grp in msg.Reactions.GroupBy(r => r.Emoji))
             {
-              <button class="action-btn" onclick="openEdit('@msg.Id','@JavaScriptEncoder.Default.Encode(msg.Content)')">✏</button>
+              var mine = grp.Any(r => r.UserId == me.Id);
+              <button class="reaction-chip@(mine ? " mine" : "")" data-emoji="@grp.Key" onclick="toggleReaction('@msg.Id','@grp.Key')">
+                <span class="rc-emoji">@grp.Key</span><span class="rc-count">@grp.Count()</span>
+              </button>
             }
-            <button class="action-btn del" onclick="confirmDelete('@msg.Id')">🗑</button>
+            <button class="reaction-add" title="Reaccionar" onclick="openReactionPicker('@msg.Id', event)">＋</button>
+          </div>
+
+          <div class="msg-actions">
+            <button class="action-btn" title="Responder" onclick="respondTo('@msg.Id','@JavaScriptEncoder.Default.Encode(msg.SenderName)','@JavaScriptEncoder.Default.Encode(preview)')">↩</button>
+            @if (isMine)
+            {
+              @if (msg.Type == MessageType.Text)
+              {
+                <button class="action-btn" onclick="openEdit('@msg.Id','@JavaScriptEncoder.Default.Encode(msg.Content)')">✏</button>
+              }
+              <button class="action-btn del" onclick="confirmDelete('@msg.Id')">🗑</button>
+            }
           </div>
         }
       </div>
@@ -111,6 +225,83 @@
     return lastDate;
   }
 }
+
+<!-- Administrar grupo modal -->
+<div class="modal-overlay" id="manageGroupModal">
+  <div class="modal">
+    <h3>Administrar grupo</h3>
+
+    <form method="post" action="/Group/Rename" class="field">
+      <input type="hidden" name="id" value="@Model.Group.Id"/>
+      <label for="groupRename">Nombre del grupo</label>
+      <div class="row-form">
+        <input type="text" id="groupRename" name="name" maxlength="40" value="@Model.Group.Name"/>
+        <button type="submit" class="btn btn-primary btn-sm">Renombrar</button>
+      </div>
+    </form>
+
+    <form method="post" action="/Group/UploadAvatar" enctype="multipart/form-data" class="field">
+      <input type="hidden" name="id" value="@Model.Group.Id"/>
+      <label class="avatar-change-label">🖼 Cambiar avatar
+        <input type="file" name="avatarFile" accept="image/*" onchange="this.form.submit()"/>
+      </label>
+    </form>
+
+    <form method="post" action="/Group/AddMember" class="field">
+      <input type="hidden" name="id" value="@Model.Group.Id"/>
+      <label>Agregar miembros</label>
+      <div class="group-pick-list" id="groupAddMembers">
+        @if (!candidates.Any())
+        {
+          <div class="sidebar-empty">No hay amigos para agregar.</div>
+        }
+        @foreach (var cand in candidates)
+        {
+          <label class="group-pick-item">
+            <input type="checkbox" name="memberIds" value="@cand.Id"/>
+            <span class="avatar-wrap">
+              @if (!string.IsNullOrEmpty(cand.AvatarPath))
+              {
+                <img src="@cand.AvatarPath" class="avatar avatar-sm" alt=""/>
+              }
+              else
+              {
+                <span class="avatar avatar-sm" style="background:@cand.AvatarColor">@cand.DisplayName[0]</span>
+              }
+            </span>
+            <span class="group-pick-name">@cand.DisplayName</span>
+          </label>
+        }
+      </div>
+      @if (candidates.Any())
+      {
+        <button type="submit" class="btn btn-primary btn-sm" style="margin-top:8px">Agregar</button>
+      }
+    </form>
+
+    <label>Miembros</label>
+    <div class="group-member-admin-list">
+      @foreach (var m in Model.Members)
+      {
+        <div class="group-member-admin">
+          <span class="group-member-admin-name">@m.DisplayName @(m.Id == Model.Group.OwnerId ? "(dueño)" : "")</span>
+          @if (m.Id != Model.Group.OwnerId && m.Id != Model.CurrentUser.Id)
+          {
+            <form method="post" action="/Group/RemoveMember">
+              <input type="hidden" name="id" value="@Model.Group.Id"/>
+              <input type="hidden" name="memberId" value="@m.Id"/>
+              <button type="submit" class="mini-btn mini-decline" title="Quitar del grupo">✕</button>
+            </form>
+          }
+        </div>
+      }
+    </div>
+
+    <div class="modal-actions">
+      <button type="button" class="btn btn-secondary" onclick="closeModal('manageGroupModal')">Cerrar</button>
+    </div>
+  </div>
+</div>
 
 <!-- Edit modal -->
 <div class="modal-overlay" id="editModal">
@@ -142,6 +333,11 @@
   </div>
 </div>
 
+<!-- Lightbox -->
+<div class="lightbox" id="lightbox" onclick="closeLightbox()">
+  <img id="lightboxImg" src="" alt=""/>
+</div>
+
 @section Scripts {
 <script>
   // ── State ──
@@ -149,12 +345,15 @@
   var groupId = '@Model.Group.Id';
   var myName = '@JavaScriptEncoder.Default.Encode(Model.CurrentUser.DisplayName)';
   var typingTimer = null;
+  var replyTo = null;
 
   // ── Chat handlers (hub global) ──
   function registerGroupHandlers(hub) {
     hub.on('ReceiveGroupMessage', function (msg) {
       addGroupMessage(msg);
       scrollToBottom();
+      acInvoke('MarkGroupRead', groupId);
+      refreshSidebar();
     });
     hub.on('GroupMessageEdited', function (messageId, newContent, editedAt) {
       var el = document.querySelector('.msg-row[data-id="' + messageId + '"]');
@@ -174,11 +373,24 @@
       if (!el) return;
       var actions = el.querySelector('.msg-actions');
       if (actions) actions.remove();
+      var reactions = el.querySelector('.msg-reactions');
+      if (reactions) reactions.remove();
       var bubble = el.querySelector('.bubble');
       if (bubble) {
         bubble.classList.add('deleted');
         bubble.innerHTML = '<span class="msg-text">Mensaje eliminado</span><div class="msg-meta"></div>';
       }
+    });
+    hub.on('GroupMessageReacted', function (messageId, emoji, userId, added, count) {
+      applyReaction(messageId, emoji, userId, added, count);
+    });
+    hub.on('GroupMessagesRead', function (userId, gid) {
+      if (gid !== groupId) return;
+      if (userId === currentUserId) return;
+      document.querySelectorAll('.msg-row.mine .msg-seen').forEach(function (s) { s.textContent = '✓✓'; });
+    });
+    hub.on('GroupSearchResults', function (results) {
+      renderSearchResults(results || []);
     });
     hub.on('GroupUserTyping', function (userId, displayName) {
       if (userId === currentUserId) return;
@@ -207,7 +419,11 @@
 
   // ── Unirse al grupo ──
   function joinGroup() {
-    if (window.acHub) acInvoke('JoinGroup', groupId);
+    if (window.acHub) {
+      acInvoke('JoinGroup', groupId);
+      acInvoke('MarkGroupRead', groupId);
+      refreshSidebar();
+    }
   }
   document.addEventListener('ac:hubconnected', joinGroup);
   if (window.acHub) {
@@ -231,7 +447,87 @@
     var content = input.value.trim();
     if (!content) return;
     input.value = '';
-    acInvoke('SendGroupMessage', groupId, content);
+    var rid = replyTo ? replyTo.id : null;
+    acInvoke('SendGroupMessage', groupId, content, rid);
+    cancelReply();
+  }
+
+  // ── Responder (citar) ──
+  function respondTo(id, name, content) {
+    replyTo = { id: id, name: name, content: content };
+    var bar = document.getElementById('replyBar');
+    if (!bar) return;
+    bar.innerHTML = '<span class="reply-bar-label">↩ ' + htmlEncode(name) + '</span>'
+      + '<span class="reply-bar-content">' + htmlEncode(content) + '</span>'
+      + '<button type="button" class="reply-bar-close" onclick="cancelReply()">✕</button>';
+    bar.classList.add('active');
+    document.getElementById('msgInput').focus();
+  }
+  function cancelReply() {
+    replyTo = null;
+    var bar = document.getElementById('replyBar');
+    if (bar) {
+      bar.classList.remove('active');
+      bar.innerHTML = '';
+    }
+  }
+
+  // ── Reacciones ──
+  function toggleReaction(messageId, emoji) {
+    acInvoke('ReactToGroupMessage', groupId, messageId, emoji);
+  }
+  function openReactionPicker(messageId, ev) {
+    if (ev) ev.stopPropagation();
+    var row = document.querySelector('.msg-row[data-id="' + messageId + '"]');
+    if (!row) return;
+    var existing = row.querySelector('.reaction-picker');
+    if (existing) { existing.remove(); return; }
+    var bar = document.createElement('div');
+    bar.className = 'reaction-picker';
+    ['👍','❤️','😂','😮','🙏'].forEach(function (e) {
+      var b = document.createElement('button');
+      b.type = 'button';
+      b.textContent = e;
+      b.className = 'reaction-pick';
+      b.onclick = function () { bar.remove(); toggleReaction(messageId, e); };
+      bar.appendChild(b);
+    });
+    var bubble = row.querySelector('.bubble');
+    if (bubble) bubble.appendChild(bar);
+  }
+  function applyReaction(messageId, emoji, userId, added, count) {
+    var row = document.querySelector('.msg-row[data-id="' + messageId + '"]');
+    if (!row) return;
+    var chip = row.querySelector('.reaction-chip[data-emoji="' + emoji + '"]');
+    var mine = userId === currentUserId;
+    if (added) {
+      if (chip) {
+        chip.querySelector('.rc-count').textContent = count;
+        chip.classList.toggle('mine', mine);
+      } else {
+        var btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'reaction-chip' + (mine ? ' mine' : '');
+        btn.setAttribute('data-emoji', emoji);
+        btn.innerHTML = '<span class="rc-emoji">' + emoji + '</span><span class="rc-count">' + count + '</span>';
+        btn.onclick = function () { toggleReaction(messageId, emoji); };
+        var wrap = row.querySelector('.msg-reactions');
+        if (!wrap) {
+          wrap = document.createElement('div');
+          wrap.className = 'msg-reactions';
+          var b = row.querySelector('.bubble');
+          if (b) b.appendChild(wrap);
+        }
+        if (wrap) wrap.appendChild(btn);
+      }
+    } else if (chip) {
+      if (count > 0) {
+        chip.querySelector('.rc-count').textContent = count;
+        chip.classList.toggle('mine', mine);
+      } else {
+        chip.remove();
+      }
+    }
   }
 
   // ── Agregar mensaje al DOM ──
@@ -255,23 +551,110 @@
     }
 
     var senderHtml = isMine ? '' : '<span class="msg-sender" style="color:' + msg.senderColor + '">' + htmlEncode(msg.senderName) + '</span>';
-    var actionsHtml = '';
-    if (isMine && !msg.isDeleted) {
-      actionsHtml = '<div class="msg-actions">'
-        + '<button class="action-btn" onclick="openEdit(\'' + msg.id + '\',\'' + jsEncode(msg.content) + '\')">✏</button>'
-        + '<button class="action-btn del" onclick="confirmDelete(\'' + msg.id + '\')">🗑</button></div>';
+
+    var replyHtml = '';
+    if (msg.replyToId) {
+      replyHtml = '<div class="msg-reply"><span class="msg-reply-sender">' + htmlEncode(msg.replyToSender || '') + '</span>'
+        + '<span class="msg-reply-content">' + htmlEncode(msg.replyToContent || '') + '</span></div>';
     }
-    var metaHtml = '<div class="msg-meta"><span class="msg-time">' + formatTime(msg.createdAt) + '</span></div>';
+
+    var innerHtml = '';
+    switch (normalizeType(msg.type)) {
+      case 0: innerHtml = '<span class="msg-text">' + htmlEncode(msg.content) + '</span>'; break;
+      case 1: innerHtml = '<img src="' + msg.filePath + '" alt="' + htmlEncode(msg.fileName) + '" class="msg-image" onclick="openLightbox(this)"/>'; break;
+      case 2: innerHtml = '<div class="msg-audio"><span class="file-icon">🎵</span><div><div class="file-name">' + htmlEncode(msg.fileName) + '</div><audio controls src="' + msg.filePath + '"></audio></div></div>'; break;
+      case 4: innerHtml = '<div class="msg-video"><video controls preload="metadata" src="' + msg.filePath + '"></video><div class="file-name">' + htmlEncode(msg.fileName) + '</div></div>'; break;
+      default: innerHtml = '<div class="msg-doc"><span class="file-icon">📄</span><div><div class="file-name">' + htmlEncode(msg.fileName) + '</div><a href="' + msg.filePath + '" download="' + htmlEncode(msg.fileName) + '" class="file-download">Descargar</a></div></div>'; break;
+    }
+
+    var seenHtml = '';
+    if (isMine) {
+      var seenCount = msg.readBy ? msg.readBy.length : 0;
+      seenHtml = '<span class="msg-seen">' + (seenCount > 0 ? '✓✓' : '✓') + '</span>';
+    }
+    var metaHtml = '<div class="msg-meta"><span class="msg-time">' + formatTime(msg.createdAt) + '</span>' + seenHtml + '</div>';
+
+    var reactionsHtml = '';
+    if (!msg.isDeleted && msg.reactions && msg.reactions.length) {
+      var grouped = {};
+      msg.reactions.forEach(function (r) { grouped[r.emoji] = (grouped[r.emoji] || 0) + 1; });
+      var mineSet = {};
+      msg.reactions.forEach(function (r) { if (r.userId === currentUserId) mineSet[r.emoji] = 1; });
+      reactionsHtml = '<div class="msg-reactions">';
+      Object.keys(grouped).forEach(function (e) {
+        reactionsHtml += '<button class="reaction-chip' + (mineSet[e] ? ' mine' : '') + '" data-emoji="' + e + '" onclick="toggleReaction(\'' + msg.id + '\',\'' + e + '\')"><span class="rc-emoji">' + e + '</span><span class="rc-count">' + grouped[e] + '</span></button>';
+      });
+      reactionsHtml += '<button class="reaction-add" title="Reaccionar" onclick="openReactionPicker(\'' + msg.id + '\', event)">＋</button></div>';
+    }
+
+    var actionsHtml = '';
+    if (!msg.isDeleted) {
+      var preview = msg.type === 0 ? String(msg.content || '').slice(0, 40) : '[' + typeName(msg.type) + ']';
+      actionsHtml = '<div class="msg-actions">'
+        + '<button class="action-btn" title="Responder" onclick="respondTo(\'' + msg.id + '\',\'' + jsEncode(msg.senderName || '') + '\',\'' + jsEncode(preview) + '\')">↩</button>';
+      if (isMine) {
+        var editBtn = msg.type === 0 ? '<button class="action-btn" onclick="openEdit(\'' + msg.id + '\',\'' + jsEncode(msg.content) + '\')">✏</button>' : '';
+        actionsHtml += editBtn + '<button class="action-btn del" onclick="confirmDelete(\'' + msg.id + '\')">🗑</button>';
+      }
+      actionsHtml += '</div>';
+    }
 
     var bubble = document.createElement('div');
-    bubble.className = 'bubble ' + side + ' text';
-    bubble.innerHTML = senderHtml + '<span class="msg-text">' + htmlEncode(msg.content) + '</span>' + metaHtml + actionsHtml;
+    bubble.className = 'bubble ' + side;
+    bubble.innerHTML = senderHtml + replyHtml + innerHtml + metaHtml + reactionsHtml + actionsHtml;
 
     var row = document.createElement('div');
     row.className = 'msg-row ' + side;
     row.setAttribute('data-id', msg.id);
     row.appendChild(bubble);
     area.appendChild(row);
+  }
+
+  // ── Buscar en el grupo ──
+  var searchTimer = null;
+  function toggleSearch() {
+    var panel = document.getElementById('searchPanel');
+    var open = panel.hidden;
+    panel.hidden = !open;
+    if (open) {
+      document.getElementById('searchInput').value = '';
+      renderSearchResults([]);
+      document.getElementById('searchInput').focus();
+    }
+  }
+  function closeSearch() {
+    document.getElementById('searchPanel').hidden = true;
+    document.getElementById('searchInput').value = '';
+  }
+  document.addEventListener('DOMContentLoaded', function () {
+    var inp = document.getElementById('searchInput');
+    if (!inp) return;
+    inp.addEventListener('input', function () {
+      clearTimeout(searchTimer);
+      var q = inp.value.trim();
+      if (!q) { renderSearchResults([]); return; }
+      searchTimer = setTimeout(function () { acInvoke('SearchGroupMessages', groupId, q); }, 300);
+    });
+    inp.addEventListener('keydown', function (e) { if (e.key === 'Escape') closeSearch(); });
+  });
+  function renderSearchResults(results) {
+    var box = document.getElementById('searchResults');
+    if (!box) return;
+    if (!results.length) { box.innerHTML = '<div class="search-empty">Sin resultados</div>'; return; }
+    box.innerHTML = results.map(function (m) {
+      return '<div class="search-result" onclick="goToMessage(\'' + m.id + '\')">'
+        + '<span class="search-result-name">' + htmlEncode(m.senderName || '') + '</span>'
+        + '<span class="search-result-text">' + htmlEncode(m.content || '') + '</span>'
+        + '<span class="search-result-time">' + formatTime(m.createdAt) + '</span></div>';
+    }).join('');
+  }
+  function goToMessage(id) {
+    closeSearch();
+    var row = document.querySelector('.msg-row[data-id="' + id + '"]');
+    if (!row) return;
+    row.scrollIntoView({ block: 'center' });
+    row.classList.add('flash');
+    setTimeout(function () { row.classList.remove('flash'); }, 1600);
   }
 
   function submitEdit() {
@@ -309,10 +692,24 @@
   function localDateKey(d) {
     return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0');
   }
+  function normalizeType(t) {
+    if (typeof t === 'number') return t;
+    switch (String(t).toLowerCase()) {
+      case 'text': return 0;
+      case 'image': return 1;
+      case 'audio': return 2;
+      case 'video': return 4;
+      default: return 3;
+    }
+  }
+  function typeName(t) {
+    return normalizeType(t) === 0 ? 'texto' : (normalizeType(t) === 1 ? 'imagen' : (normalizeType(t) === 2 ? 'audio' : (normalizeType(t) === 4 ? 'video' : 'archivo')));
+  }
   function scrollToBottom() {
     var msgs = document.getElementById('messages');
     if (msgs) msgs.scrollTop = msgs.scrollHeight;
   }
+  function toggleAttach() { document.getElementById('attachPanel').classList.toggle('open'); }
 
   scrollToBottom();
   renderOnlineCount();

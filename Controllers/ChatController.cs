@@ -9,15 +9,15 @@ namespace AeroChat.Controllers;
 public class ChatController : Controller
 {
     private readonly DataService _data;
-    private readonly IWebHostEnvironment _env;
+    private readonly IFileStorage _storage;
     private readonly IHubContext<ChatHub> _hub;
     private const long MaxFileSize = 20 * 1024 * 1024;
     private const long MaxVideoSize = 100 * 1024 * 1024;
 
-    public ChatController(DataService data, IWebHostEnvironment env, IHubContext<ChatHub> hub)
+    public ChatController(DataService data, IFileStorage storage, IHubContext<ChatHub> hub)
     {
         _data = data;
-        _env = env;
+        _storage = storage;
         _hub = hub;
     }
 
@@ -101,10 +101,6 @@ public class ChatController : Controller
             MessageType.Video => "videos",
             _ => "documents"
         };
-        var dir = Path.Combine(_env.WebRootPath, "uploads", folder);
-        Directory.CreateDirectory(dir);
-        var safeName = $"{Guid.NewGuid()}{ext}";
-        var fullPath = Path.Combine(dir, safeName);
 
         if (type == MessageType.Image)
         {
@@ -117,15 +113,14 @@ public class ChatController : Controller
                     TempData["Error"] = "El archivo no es una imagen válida.";
                     return RedirectToAction("Conversation", new { id = receiverId });
                 }
-                src.Position = 0;
-                await using var dest = new FileStream(fullPath, FileMode.Create);
-                await src.CopyToAsync(dest);
             }
         }
-        else
+
+        var filePath = await _storage.SaveAsync(file, folder);
+        if (filePath == null)
         {
-            await using var stream = new FileStream(fullPath, FileMode.Create);
-            await file.CopyToAsync(stream);
+            TempData["Error"] = "No se pudo guardar el archivo.";
+            return RedirectToAction("Conversation", new { id = receiverId });
         }
 
         var msg = _data.AddMessage(new Message
@@ -133,7 +128,7 @@ public class ChatController : Controller
             SenderId = sender.Id, SenderName = sender.DisplayName,
             SenderColor = sender.AvatarColor, ReceiverId = receiverId,
             Content = file.FileName, Type = type,
-            FileName = file.FileName, FilePath = $"/uploads/{folder}/{safeName}",
+            FileName = file.FileName, FilePath = filePath,
             FileSize = file.Length,
             CreatedAt = DateTime.UtcNow
         });

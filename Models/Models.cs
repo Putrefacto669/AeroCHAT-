@@ -34,6 +34,13 @@ public class SidebarUserItem
     public string RequestId { get; set; } = "";
 }
 
+public class Reaction
+{
+    public string UserId { get; set; } = "";
+    public string Emoji { get; set; } = "";
+    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+}
+
 public class Message
 {
     public string Id { get; set; } = Guid.NewGuid().ToString();
@@ -50,6 +57,11 @@ public class Message
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     public DateTime? EditedAt { get; set; }
     public bool IsDeleted { get; set; } = false;
+    public string? ReplyToId { get; set; }
+    public string? ReplyToContent { get; set; }
+    public string? ReplyToSender { get; set; }
+    public List<string> ReadBy { get; set; } = new();
+    public List<Reaction> Reactions { get; set; } = new();
 }
 
 public enum MessageType { Text, Image, Audio, Document, Video }
@@ -63,6 +75,8 @@ public class Group
     public string OwnerId { get; set; } = "";
     public List<string> MemberIds { get; set; } = new();
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+    public string? AvatarPath { get; set; }
+    public string? Description { get; set; }
 }
 
 public class GroupViewModel
