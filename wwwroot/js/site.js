@@ -335,67 +335,153 @@ function loadStatusStrip() {
     .catch(function(e) { console.error('AeroChat: no se pudo cargar estados', e); });
 }
 
-// ── Calls (WebRTC audio) ──
+// ── Calls (WebRTC mesh: audio/video, 1:1 and groups) ──
 window.acCall = {
-  mode: null, peerId: null, peerName: '', peerAvatar: '', peerColor: '#6C63FF',
-  pc: null, stream: null, muted: false, timerInt: null, startTs: 0,
-  pendingOffer: null, pendingCandidates: []
+  roomId: null, type: null, mode: null, myId: null,
+  groupCall: false, groupId: null, groupName: null,
+  peerId: null, peerName: '', peerAvatar: '', peerColor: '#6C63FF',
+  stream: null, muted: false, camOff: false,
+  peers: {}, memberInfo: {},
+  timerInt: null, startTs: 0,
+  ringCtx: null, ringOsc: null, ringInt: null,
+  outgoingTimer: null, incoming: null
 };
 const AC_RTC_CONFIG = { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] };
 
-function setCallUi(state) { document.getElementById('callState').textContent = state; }
+function setCallUi(state) { var el = document.getElementById('callState'); if (el) el.textContent = state; }
 function setCallTimer(show) { document.getElementById('callTimer').hidden = !show; }
 function updateCallButtons() {
   var ov = document.getElementById('callOverlay');
   if (!ov) return;
   ov.classList.toggle('incoming', window.acCall.mode === 'incoming');
+  ov.classList.toggle('active', window.acCall.mode === 'active');
+  ov.classList.toggle('video', window.acCall.type === 'video');
 }
-function declineIncoming() { hangupCall(); }
 function showCallOverlay() {
   var ov = document.getElementById('callOverlay');
+  if (!ov) return;
   ov.hidden = false;
   requestAnimationFrame(function() { ov.classList.add('show'); });
 }
 function hideCallOverlay() {
   var ov = document.getElementById('callOverlay');
+  if (!ov) return;
   ov.classList.remove('show');
   setTimeout(function() { if (!ov.classList.contains('show')) ov.hidden = true; }, 300);
 }
 
-function makePc() {
-  var pc = new RTCPeerConnection(AC_RTC_CONFIG);
-  pc.onicecandidate = function(ev) {
-    if (!ev.candidate || !window.acCall.peerId) return;
-    sendCallMsg({ type: 'candidate', candidate: ev.candidate.candidate, sdpMid: ev.candidate.sdpMid, sdpMLineIndex: ev.candidate.sdpMLineIndex });
-  };
-  pc.ontrack = function(ev) {
-    var el = document.getElementById('remoteAudio');
-    if (!el) return;
-    el.srcObject = ev.streams[0] || el.srcObject;
-    el.play().catch(function(e) { console.error('AeroChat: no se pudo reproducir el audio remoto', e); });
-  };
-  pc.onconnectionstatechange = function() {
-    if (pc.connectionState === 'failed') endCall('Conexión perdida');
-  };
-  if (window.acCall.stream) {
-    window.acCall.stream.getTracks().forEach(function(t) { pc.addTrack(t, window.acCall.stream); });
-  }
-  return pc;
+function mediaErrorToast(err) {
+  if (err && err.name === 'NotAllowedError') showToast('Micrófono/cámara no permitido.');
+  else if (err && err.name === 'NotFoundError') showToast('No se encontró micrófono o cámara.');
+  else showToast('No se pudo acceder a los dispositivos.');
+}
+function acquireMedia() {
+  var wantsVideo = window.acCall.type === 'video';
+  return navigator.mediaDevices.getUserMedia({ audio: true, video: wantsVideo })
+    .catch(function(err) {
+      if (wantsVideo && err && err.name !== 'NotAllowedError') {
+        return navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+      }
+      throw err;
+    });
 }
 
-function flushPendingCandidates() {
-  var pc = window.acCall.pc;
-  if (!pc || !pc.remoteDescription) return;
-  var list = window.acCall.pendingCandidates || [];
-  window.acCall.pendingCandidates = [];
-  list.forEach(function(msg) {
-    pc.addIceCandidate(new RTCIceCandidate({
-      candidate: msg.candidate, sdpMid: msg.sdpMid, sdpMLineIndex: msg.sdpMLineIndex
-    })).catch(function(e) { console.error('AeroChat: ice flush', e); });
+function sendCallSignal(remoteId, msg) {
+  if (!window.acCall.roomId || !remoteId) return;
+  acInvoke('CallSignalRoom', window.acCall.roomId, remoteId, msg);
+}
+
+function addLocalTracksToPeer(peer) {
+  if (peer.tracksAdded || !window.acCall.stream) return;
+  peer.tracksAdded = true;
+  window.acCall.stream.getTracks().forEach(function(t) { peer.pc.addTrack(t, window.acCall.stream); });
+}
+function syncLocalTracks() {
+  Object.keys(window.acCall.peers).forEach(function(id) {
+    addLocalTracksToPeer(window.acCall.peers[id]);
   });
 }
 
-function sendCallMsg(msg) { acInvoke('CallSignal', window.acCall.peerId, msg); }
+function createPeer(remoteId) {
+  if (window.acCall.peers[remoteId]) return window.acCall.peers[remoteId];
+  var peer = {
+    polite: String(window.acCall.myId) < String(remoteId),
+    makingOffer: false,
+    tracksAdded: false,
+    pc: new RTCPeerConnection(AC_RTC_CONFIG),
+    queue: []
+  };
+  window.acCall.peers[remoteId] = peer;
+  addLocalTracksToPeer(peer);
+  var pc = peer.pc;
+  pc.onicecandidate = function(ev) {
+    if (!ev.candidate) return;
+    sendCallSignal(remoteId, {
+      type: 'candidate', candidate: ev.candidate.candidate,
+      sdpMid: ev.candidate.sdpMid, sdpMLineIndex: ev.candidate.sdpMLineIndex
+    });
+  };
+  pc.ontrack = function(ev) {
+    if (ev.streams && ev.streams[0]) attachRemoteStream(remoteId, ev.streams[0]);
+  };
+  pc.onconnectionstatechange = function() {
+    if (pc.connectionState === 'failed' || pc.connectionState === 'closed') {
+      delete window.acCall.peers[remoteId];
+      var t = document.getElementById('callTile_' + remoteId);
+      if (t) t.remove();
+    }
+  };
+  return peer;
+}
+
+function makeOffer(remoteId) {
+  var peer = window.acCall.peers[remoteId];
+  if (!peer || !peer.pc) return;
+  peer.makingOffer = true;
+  peer.pc.createOffer()
+    .then(function(offer) { return peer.pc.setLocalDescription(offer); })
+    .then(function() { sendCallSignal(remoteId, { type: 'offer', sdp: peer.pc.localDescription.sdp }); })
+    .catch(function(e) { console.error('AeroChat: offer', e); })
+    .finally(function() { peer.makingOffer = false; });
+}
+
+function flushPeerQueue(peer) {
+  peer.queue.forEach(function(msg) {
+    peer.pc.addIceCandidate(new RTCIceCandidate({
+      candidate: msg.candidate, sdpMid: msg.sdpMid, sdpMLineIndex: msg.sdpMLineIndex
+    })).catch(function(e) { console.error('AeroChat: ice flush', e); });
+  });
+  peer.queue = [];
+}
+
+function handleCallSignal(from, msg) {
+  if (!msg || !msg.type || from === window.acCall.myId) return;
+  var peer = createPeer(from);
+  var pc = peer.pc;
+  if (msg.type === 'offer') {
+    var collision = peer.makingOffer || pc.signalingState !== 'stable';
+    if (collision && !peer.polite) return;
+    if (collision && pc.signalingState === 'have-local-offer') {
+      pc.setLocalDescription({ type: 'rollback' });
+    }
+    pc.setRemoteDescription(new RTCSessionDescription({ type: 'offer', sdp: msg.sdp }))
+      .then(function() { flushPeerQueue(peer); })
+      .then(function() { return pc.createAnswer(); })
+      .then(function(answer) { return pc.setLocalDescription(answer); })
+      .then(function() { sendCallSignal(from, { type: 'answer', sdp: pc.localDescription.sdp }); })
+      .catch(function(e) { console.error('AeroChat: answer', e); });
+  } else if (msg.type === 'answer') {
+    if (pc.signalingState === 'stable') return;
+    pc.setRemoteDescription(new RTCSessionDescription({ type: 'answer', sdp: msg.sdp }))
+      .then(function() { flushPeerQueue(peer); })
+      .catch(function(e) { console.error('AeroChat: setRemote answer', e); });
+  } else if (msg.type === 'candidate' && msg.candidate) {
+    if (!pc.remoteDescription) { peer.queue.push(msg); return; }
+    pc.addIceCandidate(new RTCIceCandidate({
+      candidate: msg.candidate, sdpMid: msg.sdpMid, sdpMLineIndex: msg.sdpMLineIndex
+    })).catch(function(e) { console.error('AeroChat: ice', e); });
+  }
+}
 
 function startRingtone() {
   if (window.acCall.ringCtx) return;
@@ -432,17 +518,84 @@ function startTimer() {
   }, 1000);
 }
 
-function setupCallDisplay(peerId, name, avatar, color, state) {
+function clearCallVideos() {
+  var grid = document.getElementById('callVideos');
+  if (grid) grid.innerHTML = '';
+}
+function localTile() {
+  var grid = document.getElementById('callVideos');
+  if (!grid) return null;
+  var t = grid.querySelector('.call-video-tile.local');
+  if (t) return t;
+  t = document.createElement('div');
+  t.className = 'call-video-tile local';
+  var v = document.createElement('video');
+  v.autoplay = true; v.muted = true; v.playsInline = true;
+  t.appendChild(v);
+  grid.insertBefore(t, grid.firstChild);
+  return t;
+}
+function renderPeerVideo(remoteId) {
+  var grid = document.getElementById('callVideos');
+  if (!grid) return null;
+  var t = document.createElement('div');
+  t.className = 'call-video-tile remote';
+  t.id = 'callTile_' + remoteId;
+  var v = document.createElement('video');
+  v.autoplay = true; v.playsInline = true;
+  t.appendChild(v);
+  grid.appendChild(t);
+  return t;
+}
+function attachLocalStream(stream) {
+  if (window.acCall.type !== 'video' || !stream) return;
+  var t = localTile();
+  if (!t) return;
+  var v = t.querySelector('video');
+  v.srcObject = stream;
+  v.play().catch(function(e) { console.error('AeroChat: play local', e); });
+}
+function attachRemoteStream(remoteId, stream) {
+  if (!stream) return;
+  var t = document.getElementById('callTile_' + remoteId);
+  if (!t) t = renderPeerVideo(remoteId);
+  if (!t) return;
+  var v = t.querySelector('video');
+  v.srcObject = stream;
+  v.play().catch(function(e) { console.error('AeroChat: play remoto', e); });
+}
+function clearParticipants() {
+  var p = document.getElementById('callParticipants');
+  if (p) p.innerHTML = '';
+}
+function renderParticipants() {
+  var p = document.getElementById('callParticipants');
+  if (!p) return;
+  p.innerHTML = '';
+  Object.keys(window.acCall.memberInfo).forEach(function(id) {
+    var m = window.acCall.memberInfo[id];
+    var el = document.createElement('span');
+    el.className = 'participant-chip';
+    el.title = m.displayName || '';
+    el.textContent = m.displayName ? m.displayName.charAt(0).toUpperCase() : '?';
+    p.appendChild(el);
+  });
+}
+
+function setupCallDisplay(peerId, name, avatar, color, state, type) {
+  window.acCall.myId = document.body.getAttribute('data-userid') || '';
   window.acCall.peerId = peerId;
   window.acCall.peerName = name || '';
   window.acCall.peerAvatar = avatar || '';
   window.acCall.peerColor = color || '#6C63FF';
+  window.acCall.type = type || 'audio';
   var av = document.getElementById('callAvatar');
   av.style.background = window.acCall.peerColor;
   av.textContent = name ? name.charAt(0).toUpperCase() : '?';
   document.getElementById('callName').textContent = name || '…';
   setCallUi(state);
   showCallOverlay();
+  updateCallButtons();
 }
 
 function cleanupCall() {
@@ -451,36 +604,56 @@ function cleanupCall() {
   window.acCall.timerInt = null;
   if (window.acCall.outgoingTimer) clearTimeout(window.acCall.outgoingTimer);
   window.acCall.outgoingTimer = null;
-  if (window.acCall.pc) { try { window.acCall.pc.close(); } catch (e) {} }
-  window.acCall.pc = null;
+  Object.keys(window.acCall.peers).forEach(function(id) {
+    try { window.acCall.peers[id].pc.close(); } catch (e) {}
+  });
+  window.acCall.peers = {};
+  window.acCall.memberInfo = {};
   if (window.acCall.stream) {
     window.acCall.stream.getTracks().forEach(function(t) { t.stop(); });
   }
   window.acCall.stream = null;
   window.acCall.mode = null;
+  window.acCall.roomId = null;
+  window.acCall.type = null;
+  window.acCall.groupCall = false;
+  window.acCall.groupId = null;
+  window.acCall.groupName = null;
   window.acCall.peerId = null;
-  window.acCall.pendingOffer = null;
-  window.acCall.pendingCandidates = [];
-  document.getElementById('callMute').classList.remove('muted');
-  document.getElementById('callMute').textContent = '🎙';
+  window.acCall.peerName = '';
+  window.acCall.muted = false;
+  window.acCall.camOff = false;
+  window.acCall.incoming = null;
+  var muteBtn = document.getElementById('callMute');
+  if (muteBtn) { muteBtn.classList.remove('muted'); muteBtn.textContent = '🎙'; }
+  var camBtn = document.getElementById('callCam');
+  if (camBtn) { camBtn.classList.remove('off'); camBtn.textContent = '🎥'; }
   setCallTimer(false);
+  clearCallVideos();
+  clearParticipants();
   updateCallButtons();
   hideCallOverlay();
 }
 
 function endCall(reason) {
-  if (window.acCall.mode) acInvoke('CallHangup', window.acCall.peerId);
+  if (window.acCall.mode && window.acCall.roomId) acInvoke('LeaveCallRoom', window.acCall.roomId);
   if (reason) showToast(reason);
   cleanupCall();
 }
 
 function hangupCall() {
   if (!window.acCall.mode) return;
-  if (window.acCall.mode === 'incoming' && window.acCall.pendingOffer) {
-    acInvoke('CallDecline', window.acCall.peerId);
-  } else {
-    acInvoke('CallHangup', window.acCall.peerId);
+  if (window.acCall.mode === 'incoming') {
+    acInvoke('DeclineCall', window.acCall.roomId);
+  } else if (window.acCall.roomId) {
+    acInvoke('LeaveCallRoom', window.acCall.roomId);
   }
+  cleanupCall();
+}
+
+function declineIncoming() {
+  if (window.acCall.mode !== 'incoming') return;
+  acInvoke('DeclineCall', window.acCall.roomId);
   cleanupCall();
 }
 
@@ -493,120 +666,250 @@ function toggleMute() {
   btn.textContent = window.acCall.muted ? '🔇' : '🎙';
 }
 
-function callFriend(peerId, name, avatar, color) {
+function toggleCam() {
+  if (window.acCall.type !== 'video' || !window.acCall.stream) return;
+  window.acCall.camOff = !window.acCall.camOff;
+  window.acCall.stream.getVideoTracks().forEach(function(t) { t.enabled = !window.acCall.camOff; });
+  var btn = document.getElementById('callCam');
+  btn.classList.toggle('off', window.acCall.camOff);
+  btn.textContent = window.acCall.camOff ? '🚫' : '🎥';
+}
+
+function callFriend(peerId, name, avatar, color, type) {
   if (window.acCall.mode) { showToast('Ya hay una llamada en curso.'); return; }
   if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
     showToast('Llamadas requieren HTTPS o localhost.');
     return;
   }
-  setupCallDisplay(peerId, name, avatar, color, 'Llamando…');
+  type = type || 'audio';
+  setupCallDisplay(peerId, name, avatar, color, 'Llamando…', type);
   window.acCall.mode = 'outgoing';
   updateCallButtons();
   window.acCall.outgoingTimer = setTimeout(function() {
     if (window.acCall.mode === 'outgoing') endCall('La persona no respondió.');
   }, 30000);
-  navigator.mediaDevices.getUserMedia({ audio: true })
+  acquireMedia()
     .then(function(stream) {
       window.acCall.stream = stream;
-      window.acCall.pc = makePc();
-      return window.acCall.pc.createOffer();
-    })
-    .then(function(offer) {
-      return window.acCall.pc.setLocalDescription(offer);
-    })
-    .then(function() {
-      sendCallMsg({ type: 'offer', sdp: window.acCall.pc.localDescription.sdp });
+      attachLocalStream(stream);
+      syncLocalTracks();
+      acInvoke('StartCall', peerId, type);
     })
     .catch(function(err) {
-      console.error('AeroChat: getUserMedia/offer', err);
-      if (err.name === 'NotAllowedError') showToast('Micrófono no permitido.');
-      else if (err.name === 'NotFoundError') showToast('No se encontró micrófono.');
-      else showToast('No se pudo iniciar la llamada.');
+      mediaErrorToast(err);
+      cleanupCall();
+    });
+}
+
+function callGroup(groupId, groupName, groupColor, type) {
+  if (window.acCall.mode) { showToast('Ya hay una llamada en curso.'); return; }
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+    showToast('Llamadas requieren HTTPS o localhost.');
+    return;
+  }
+  type = type || 'audio';
+  setupCallDisplay(groupId, groupName, '', groupColor, 'Llamando…', type);
+  window.acCall.groupCall = true;
+  window.acCall.groupId = groupId;
+  window.acCall.groupName = groupName || '';
+  window.acCall.mode = 'outgoing';
+  updateCallButtons();
+  window.acCall.outgoingTimer = setTimeout(function() {
+    if (window.acCall.mode === 'outgoing') endCall('Nadie respondió.');
+  }, 60000);
+  acquireMedia()
+    .then(function(stream) {
+      window.acCall.stream = stream;
+      attachLocalStream(stream);
+      syncLocalTracks();
+      acInvoke('CreateGroupCall', groupId, type);
+    })
+    .catch(function(err) {
+      mediaErrorToast(err);
       cleanupCall();
     });
 }
 
 function acceptIncoming() {
-  if (!window.acCall.pendingOffer) return;
-  window.acCall.mode = 'active';
+  if (window.acCall.mode !== 'incoming') return;
+  window.acCall.mode = 'joining';
   updateCallButtons();
-  setCallUi('En llamada');
-  setCallTimer(true);
-  stopRingtone();
-  startTimer();
-  navigator.mediaDevices.getUserMedia({ audio: true })
+  setCallUi('Conectando…');
+  acquireMedia()
     .then(function(stream) {
       window.acCall.stream = stream;
-      window.acCall.pc = makePc();
-      var offer = window.acCall.pendingOffer;
-      window.acCall.pendingOffer = null;
-      return window.acCall.pc.setRemoteDescription(new RTCSessionDescription({ type: 'offer', sdp: offer.sdp }))
-        .then(function() { flushPendingCandidates(); })
-        .then(function() { return window.acCall.pc.createAnswer(); })
-        .then(function(answer) { return window.acCall.pc.setLocalDescription(answer); })
-        .then(function() { sendCallMsg({ type: 'answer', sdp: window.acCall.pc.localDescription.sdp }); });
+      attachLocalStream(stream);
+      syncLocalTracks();
+      acInvoke('JoinCallRoom', window.acCall.roomId);
     })
     .catch(function(err) {
-      console.error('AeroChat: answer', err);
-      if (err.name === 'NotAllowedError') showToast('Micrófono no permitido.');
-      else showToast('No se pudo aceptar la llamada.');
-      hangupCall();
+      mediaErrorToast(err);
+      window.acCall.mode = 'incoming';
+      updateCallButtons();
+      setCallUi('Llamada entrante…');
     });
+}
+
+function openCallInvite() {
+  var modal = document.getElementById('callInviteModal');
+  var list = document.getElementById('callInviteList');
+  if (!modal || !list) return;
+  modal.hidden = false;
+  list.innerHTML = 'Cargando amigos…';
+  fetch('/Home/GetFriendsJson')
+    .then(function(r) { if (!r.ok) throw new Error(); return r.json(); })
+    .then(function(friends) {
+      var inCall = Object.keys(window.acCall.peers);
+      if (window.acCall.peerId) inCall.push(window.acCall.peerId);
+      var eligible = friends.filter(function(f) { return inCall.indexOf(f.id) < 0; });
+      if (!eligible.length) {
+        list.innerHTML = '<div class="sidebar-empty">No hay amigos para invitar.</div>';
+        return;
+      }
+      list.innerHTML = eligible.map(function(f) {
+        var color = f.avatarColor || '#6C63FF';
+        var img = f.avatarPath
+          ? '<img src="' + f.avatarPath + '" class="avatar avatar-sm" alt=""/>'
+          : '<span class="avatar avatar-sm" style="background:' + color + '">' + escapeHtml(f.displayName).charAt(0) + '</span>';
+        return '<div class="call-invite-item" onclick="sendCallInvite(\'' + f.id + '\')">'
+          + '<span class="avatar-wrap">' + img + '</span>'
+          + '<span class="group-pick-name">' + escapeHtml(f.displayName) + '</span>'
+          + '<span class="call-invite-go">→</span>'
+          + '</div>';
+      }).join('');
+    })
+    .catch(function() {
+      list.innerHTML = '<div class="sidebar-empty">No se pudieron cargar tus amigos.</div>';
+    });
+}
+
+function sendCallInvite(friendId) {
+  var modal = document.getElementById('callInviteModal');
+  if (modal) modal.hidden = true;
+  acInvoke('InviteToCall', friendId, window.acCall.roomId);
 }
 
 // ── Call hub handlers ──
 function registerCallHandlers(hub) {
-  hub.on('CallSignal', function(payload) {
-    if (!payload || !payload.message) return;
-    var from = payload.from;
-    var msg = payload.message;
-    if (msg.type === 'offer') {
-      if (window.acCall.mode) {
-        if (window.acCall.peerId !== from) acInvoke('CallDecline', from);
-        return;
-      }
-      setupCallDisplay(from, payload.fromName, payload.fromAvatar, payload.fromColor, 'Llamada entrante…');
-      window.acCall.pendingOffer = msg;
-      window.acCall.pendingCandidates = [];
-      window.acCall.mode = 'incoming';
-      updateCallButtons();
-      startRingtone();
-      showToast(payload.fromName + ' te está llamando.', 'info');
+  hub.on('CallCreated', function(roomId, type, targetId) {
+    if (window.acCall.mode !== 'outgoing' || !roomId) return;
+    window.acCall.roomId = roomId;
+    window.acCall.type = type || window.acCall.type;
+    updateCallButtons();
+  });
+
+  hub.on('IncomingCall', function(payload) {
+    if (!payload || !payload.roomId) return;
+    if (window.acCall.mode) {
+      acInvoke('DeclineCall', payload.roomId);
       return;
     }
-    var pc = window.acCall.pc;
-    if (msg.type === 'answer' && msg.sdp) {
-      if (!pc || window.acCall.peerId !== from) return;
-      pc.setRemoteDescription(new RTCSessionDescription({ type: 'answer', sdp: msg.sdp }))
-        .then(function() { flushPendingCandidates(); })
-        .catch(function(e) { console.error('AeroChat: setRemote answer', e); });
+    window.acCall.myId = document.body.getAttribute('data-userid') || '';
+    window.acCall.roomId = payload.roomId;
+    window.acCall.type = payload.type === 'video' ? 'video' : 'audio';
+    window.acCall.groupCall = !!(payload.groupId);
+    window.acCall.groupId = payload.groupId || null;
+    window.acCall.groupName = payload.groupName || null;
+    window.acCall.peerId = payload.fromId;
+    window.acCall.peerName = payload.fromName || '';
+    window.acCall.peerAvatar = payload.fromAvatar || '';
+    window.acCall.peerColor = payload.fromColor || '#6C63FF';
+    window.acCall.incoming = payload;
+    setupCallDisplay(window.acCall.peerId, window.acCall.peerName, window.acCall.peerAvatar, window.acCall.peerColor, 'Llamada entrante…', window.acCall.type);
+    if (window.acCall.groupCall) {
+      document.getElementById('callName').textContent = window.acCall.groupName || 'Llamada de grupo';
+    }
+    window.acCall.mode = 'incoming';
+    updateCallButtons();
+    startRingtone();
+    showToast((window.acCall.peerName || 'Alguien') + ' te está llamando.', 'info');
+  });
+
+  hub.on('CallRoomJoined', function(roomId, members) {
+    if (window.acCall.roomId !== roomId) return;
+    window.acCall.mode = 'active';
+    updateCallButtons();
+    setCallUi('En llamada');
+    setCallTimer(true);
+    startTimer();
+    stopRingtone();
+    window.acCall.memberInfo = {};
+    (members || []).forEach(function(m) { if (m && m.userId) window.acCall.memberInfo[m.userId] = m; });
+    renderParticipants();
+    (members || []).forEach(function(m) {
+      if (!m || m.userId === window.acCall.myId) return;
+      createPeer(m.userId);
+      makeOffer(m.userId);
+    });
+  });
+
+  hub.on('CallUserJoined', function(member) {
+    if (!window.acCall.roomId || !member || !member.userId) return;
+    window.acCall.memberInfo[member.userId] = member;
+    renderParticipants();
+    if (window.acCall.mode === 'outgoing') {
       window.acCall.mode = 'active';
       updateCallButtons();
       setCallUi('En llamada');
       setCallTimer(true);
       startTimer();
-    } else if (msg.type === 'candidate' && msg.candidate) {
-      if (window.acCall.peerId !== from) return;
-      if (!pc || !pc.remoteDescription) {
-        window.acCall.pendingCandidates.push(msg);
-        return;
-      }
-      pc.addIceCandidate(new RTCIceCandidate({
-        candidate: msg.candidate, sdpMid: msg.sdpMid, sdpMLineIndex: msg.sdpMLineIndex
-      })).catch(function(e) { console.error('AeroChat: ice', e); });
+      if (window.acCall.outgoingTimer) { clearTimeout(window.acCall.outgoingTimer); window.acCall.outgoingTimer = null; }
+    }
+    if (member.userId === window.acCall.myId) return;
+    createPeer(member.userId);
+    makeOffer(member.userId);
+  });
+
+  hub.on('CallRoomSignal', function(payload) {
+    if (!payload || payload.roomId !== window.acCall.roomId) return;
+    handleCallSignal(payload.from, payload.message);
+  });
+
+  hub.on('CallUserLeft', function(uid, roomId) {
+    if (roomId !== window.acCall.roomId) return;
+    delete window.acCall.memberInfo[uid];
+    renderParticipants();
+    var peer = window.acCall.peers[uid];
+    if (peer) { try { peer.pc.close(); } catch (e) {} }
+    delete window.acCall.peers[uid];
+    var t = document.getElementById('callTile_' + uid);
+    if (t) t.remove();
+  });
+
+  hub.on('CallCancelled', function(roomId) {
+    if (window.acCall.roomId !== roomId) return;
+    cleanupCall();
+    showToast('Llamada cancelada.');
+  });
+
+  hub.on('CallDeclined', function(uid, roomId) {
+    if (window.acCall.roomId !== roomId) return;
+    if (window.acCall.groupCall) {
+      showToast('Un participante rechazó la llamada.');
+    } else if (uid === window.acCall.peerId) {
+      endCall('Llamada rechazada.');
     }
   });
-  hub.on('CallEnded', function(uid) {
-    if (window.acCall.peerId === uid) { stopRingtone(); cleanupCall(); showToast('Llamada finalizada.'); }
-  });
-  hub.on('CallDeclined', function(uid) {
-    if (window.acCall.peerId === uid) { cleanupCall(); showToast('Llamada rechazada.'); }
-  });
+
   hub.on('CallBusy', function(uid) {
-    if (window.acCall.peerId === uid) { cleanupCall(); showToast('La persona está en otra llamada.'); }
+    if (window.acCall.groupCall) { showToast('La persona está en otra llamada.'); return; }
+    if (window.acCall.peerId === uid && window.acCall.mode === 'outgoing') {
+      endCall('La persona está en otra llamada.');
+    }
   });
+
   hub.on('CallOffline', function(uid) {
-    if (window.acCall.peerId === uid) { cleanupCall(); showToast('La persona no está en línea.'); }
+    if (window.acCall.groupCall) { showToast('La persona no está en línea.'); return; }
+    if (window.acCall.peerId === uid && window.acCall.mode === 'outgoing') {
+      endCall('La persona no está en línea.');
+    }
+  });
+
+  hub.on('CallEnded', function(roomId) {
+    if (window.acCall.roomId === roomId) {
+      cleanupCall();
+      showToast('La llamada finalizó.');
+    }
   });
 }
 

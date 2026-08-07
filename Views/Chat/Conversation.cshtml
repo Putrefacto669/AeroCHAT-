@@ -32,7 +32,9 @@
       </a>
       <button class="icon-btn" title="Buscar" onclick="toggleSearch()">🔍</button>
       <button class="icon-btn icon-btn-call" title="Llamada de voz"
-              onclick="callFriend('@Model.Recipient.Id','@JavaScriptEncoder.Default.Encode(Model.Recipient.DisplayName)','@Model.Recipient.AvatarPath','@Model.Recipient.AvatarColor')">📞</button>
+              onclick="callFriend('@Model.Recipient.Id','@JavaScriptEncoder.Default.Encode(Model.Recipient.DisplayName)','@Model.Recipient.AvatarPath','@Model.Recipient.AvatarColor','audio')">📞</button>
+      <button class="icon-btn icon-btn-call" title="Videollamada"
+              onclick="callFriend('@Model.Recipient.Id','@JavaScriptEncoder.Default.Encode(Model.Recipient.DisplayName)','@Model.Recipient.AvatarPath','@Model.Recipient.AvatarColor','video')">📹</button>
     </div>
 
     <div class="search-panel" id="searchPanel" hidden>

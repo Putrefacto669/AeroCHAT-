@@ -17,20 +17,28 @@
 
 <!-- Llamada overlay -->
 <div id="callOverlay" class="call-overlay" hidden>
-  <audio id="remoteAudio" autoplay playsinline></audio>
   <div class="call-box">
+    <div class="call-videos" id="callVideos"></div>
     <div class="call-info">
       <span class="call-avatar" id="callAvatar"></span>
       <div class="call-name" id="callName"></div>
       <div class="call-state" id="callState">Llamando…</div>
       <div class="call-timer" id="callTimer" hidden>00:00</div>
+      <div class="call-participants" id="callParticipants"></div>
     </div>
     <div class="call-actions">
       <button class="call-btn call-accept" onclick="acceptIncoming()" title="Aceptar">📞</button>
       <button class="call-btn call-reject" onclick="declineIncoming()" title="Rechazar">✕</button>
+      <button class="call-btn call-cam" id="callCam" onclick="toggleCam()" title="Cámara">🎥</button>
       <button class="call-btn call-mute" id="callMute" onclick="toggleMute()" title="Silenciar">🎙</button>
+      <button class="call-btn call-invite" id="callInvite" onclick="openCallInvite()" title="Invitar">👥</button>
       <button class="call-btn call-hangup" onclick="hangupCall()" title="Colgar">📵</button>
     </div>
+  </div>
+  <div class="call-invite-modal" id="callInviteModal" hidden>
+    <div class="call-invite-head">Invitar a amigos</div>
+    <div class="call-invite-list" id="callInviteList"></div>
+    <button type="button" class="btn btn-ghost btn-invite-close" onclick="document.getElementById('callInviteModal').hidden = true">Cerrar</button>
   </div>
 </div>
 

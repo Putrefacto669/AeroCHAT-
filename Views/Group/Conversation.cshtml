@@ -36,6 +36,10 @@
         </div>
       </div>
       <button class="icon-btn" title="Buscar" onclick="toggleSearch()">🔍</button>
+      <button class="icon-btn icon-btn-call" title="Llamada de voz"
+              onclick="callGroup('@Model.Group.Id','@JavaScriptEncoder.Default.Encode(Model.Group.Name)','@groupColor','audio')">📞</button>
+      <button class="icon-btn icon-btn-call" title="Videollamada"
+              onclick="callGroup('@Model.Group.Id','@JavaScriptEncoder.Default.Encode(Model.Group.Name)','@groupColor','video')">📹</button>
       @if (isOwner)
       {
         <button class="icon-btn" title="Administrar grupo" onclick="openModal('manageGroupModal')">⚙</button>

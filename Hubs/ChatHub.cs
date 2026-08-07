@@ -9,8 +9,18 @@ public class ChatHub : Hub
     private readonly DataService _data;
     private static readonly object _connLock = new();
     private static readonly Dictionary<string, HashSet<string>> _connections = new();
-    private static readonly object _busyLock = new();
-    private static readonly HashSet<string> _busy = new();
+    private static readonly object _callLock = new();
+    private static readonly Dictionary<string, CallRoom> _callRooms = new();
+
+    private class CallRoom
+    {
+        public string Id { get; } = Guid.NewGuid().ToString("N");
+        public string Type { get; init; } = "audio";
+        public string? GroupId { get; init; }
+        public string? GroupName { get; set; }
+        public HashSet<string> Members { get; } = new();
+        public HashSet<string> Invitees { get; } = new();
+    }
 
     public ChatHub(DataService data) => _data = data;
 
@@ -35,7 +45,7 @@ public class ChatHub : Hub
         if (uid != null)
         {
             Untrack(uid, Context.ConnectionId);
-            SetBusy(uid, false);
+            await LeaveAllCallRooms(uid);
         }
         await base.OnDisconnectedAsync(exception);
         if (uid != null) await Clients.Others.SendAsync("UserOffline", uid);
@@ -99,19 +109,6 @@ public class ChatHub : Hub
     private static bool IsOnline(string userId)
     {
         lock (_connLock) return _connections.ContainsKey(userId);
-    }
-
-    private static bool IsBusy(string userId)
-    {
-        lock (_busyLock) return _busy.Contains(userId);
-    }
-
-    private static void SetBusy(string userId, bool busy)
-    {
-        lock (_busyLock)
-        {
-            if (busy) _busy.Add(userId); else _busy.Remove(userId);
-        }
     }
 
     public static async Task NotifyUsers(IHubContext<ChatHub> ctx, IEnumerable<string> userIds, string method, object? arg)
@@ -457,60 +454,261 @@ public class ChatHub : Hub
         }
     }
 
-    // ── Audio calls (WebRTC signaling) ────────────────
-    public async Task CallSignal(string toUserId, CallMessage msg)
+    // ── Audio/video calls (WebRTC mesh over rooms) ──────
+    private static string CallGroup(string roomId) => $"call_{roomId}";
+
+    private static CallRoom? GetCallRoom(string roomId)
+    {
+        lock (_callLock) return _callRooms.TryGetValue(roomId, out var r) ? r : null;
+    }
+
+    private static bool IsInCall(string userId)
+    {
+        lock (_callLock) return _callRooms.Values.Any(r => r.Members.Contains(userId));
+    }
+
+    private static CallRoom NewRoom(string creatorId, string type, string? groupId)
+    {
+        var room = new CallRoom { Type = type, GroupId = groupId };
+        lock (_callLock)
+        {
+            _callRooms[room.Id] = room;
+            room.Members.Add(creatorId);
+        }
+        return room;
+    }
+
+    private static object MemberInfo(User? u) => new
+    {
+        userId = u?.Id,
+        displayName = u?.DisplayName,
+        avatarColor = u?.AvatarColor,
+        avatarPath = u?.AvatarPath
+    };
+
+    private async Task LeaveAllCallRooms(string userId)
+    {
+        var notify = new List<string>();
+        var toRemove = new List<string>();
+        lock (_callLock)
+        {
+            foreach (var room in _callRooms.Values)
+            {
+                if (room.Members.Remove(userId))
+                {
+                    notify.Add(room.Id);
+                    if (room.Members.Count == 0) toRemove.Add(room.Id);
+                }
+                room.Invitees.Remove(userId);
+            }
+            foreach (var id in toRemove) _callRooms.Remove(id);
+        }
+        foreach (var roomId in notify)
+            await Clients.OthersInGroup(CallGroup(roomId)).SendAsync("CallUserLeft", userId, roomId);
+    }
+
+    public async Task StartCall(string toUserId, string type)
+    {
+        var uid = UserId;
+        if (uid == null || (type != "audio" && type != "video") || uid == toUserId) return;
+        if (IsInCall(uid)) return;
+
+        if (!IsOnline(toUserId))
+        {
+            await Clients.Caller.SendAsync("CallOffline", toUserId);
+            return;
+        }
+        if (IsInCall(toUserId))
+        {
+            await Clients.Caller.SendAsync("CallBusy", toUserId);
+            return;
+        }
+
+        var room = NewRoom(uid, type, null);
+        lock (_callLock) room.Invitees.Add(toUserId);
+        await Groups.AddToGroupAsync(Context.ConnectionId, CallGroup(room.Id));
+        await Clients.Caller.SendAsync("CallCreated", room.Id, type, toUserId);
+
+        var me = _data.GetUserById(uid);
+        await SendToUser(toUserId, "IncomingCall", new
+        {
+            roomId = room.Id,
+            type,
+            groupId = (string?)null,
+            groupName = (string?)null,
+            fromId = uid,
+            fromName = me?.DisplayName,
+            fromAvatar = me?.AvatarPath,
+            fromColor = me?.AvatarColor
+        });
+    }
+
+    public async Task CreateGroupCall(string groupId, string type)
+    {
+        var uid = UserId;
+        if (uid == null || (type != "audio" && type != "video")) return;
+        var group = _data.GetGroup(groupId);
+        if (group == null || !group.MemberIds.Contains(uid)) return;
+
+        var room = NewRoom(uid, type, groupId);
+        lock (_callLock)
+        {
+            room.GroupName = group.Name;
+            foreach (var m in group.MemberIds)
+                if (m != uid) room.Invitees.Add(m);
+        }
+
+        await Groups.AddToGroupAsync(Context.ConnectionId, CallGroup(room.Id));
+        await Clients.Caller.SendAsync("CallCreated", room.Id, type, groupId);
+
+        var me = _data.GetUserById(uid);
+        var payload = new
+        {
+            roomId = room.Id,
+            type,
+            groupId,
+            groupName = group.Name,
+            fromId = uid,
+            fromName = me?.DisplayName,
+            fromAvatar = me?.AvatarPath,
+            fromColor = me?.AvatarColor
+        };
+        foreach (var m in group.MemberIds)
+        {
+            if (m == uid || IsInCall(m)) continue;
+            await SendToUser(m, "IncomingCall", payload);
+        }
+    }
+
+    public async Task JoinCallRoom(string roomId)
+    {
+        var uid = UserId;
+        if (uid == null) return;
+
+        var room = GetCallRoom(roomId);
+        if (room == null)
+        {
+            await Clients.Caller.SendAsync("CallEnded", roomId);
+            return;
+        }
+
+        lock (_callLock)
+        {
+            if (room.Members.Contains(uid))
+            {
+                // already in
+            }
+            else if (room.Invitees.Contains(uid) || (room.GroupId != null && _data.IsGroupMember(room.GroupId, uid)))
+            {
+                room.Members.Add(uid);
+                room.Invitees.Remove(uid);
+            }
+            else
+            {
+                return;
+            }
+        }
+
+        await Groups.AddToGroupAsync(Context.ConnectionId, CallGroup(roomId));
+
+        List<object> members;
+        lock (_callLock)
+            members = room.Members.Select(id => MemberInfo(_data.GetUserById(id))).ToList();
+
+        await Clients.Caller.SendAsync("CallRoomJoined", roomId, members);
+        await Clients.OthersInGroup(CallGroup(roomId)).SendAsync("CallUserJoined", MemberInfo(_data.GetUserById(uid)));
+    }
+
+    public async Task LeaveCallRoom(string roomId)
+    {
+        var uid = UserId;
+        if (uid == null) return;
+        await Groups.RemoveFromGroupAsync(Context.ConnectionId, CallGroup(roomId));
+
+        List<string> pendingInvitees = new();
+        var empty = false;
+        lock (_callLock)
+        {
+            if (_callRooms.TryGetValue(roomId, out var room))
+            {
+                room.Members.Remove(uid);
+                room.Invitees.Remove(uid);
+                pendingInvitees = room.Invitees.ToList();
+                empty = room.Members.Count == 0;
+                if (empty) _callRooms.Remove(roomId);
+            }
+            else return;
+        }
+
+        await Clients.OthersInGroup(CallGroup(roomId)).SendAsync("CallUserLeft", uid, roomId);
+        if (empty && pendingInvitees.Count > 0)
+            await SendToUsers(pendingInvitees, "CallCancelled", roomId);
+    }
+
+    public async Task DeclineCall(string roomId)
+    {
+        var uid = UserId;
+        if (uid == null) return;
+        lock (_callLock)
+        {
+            if (!_callRooms.TryGetValue(roomId, out var room)) return;
+            room.Invitees.Remove(uid);
+        }
+        await Clients.OthersInGroup(CallGroup(roomId)).SendAsync("CallDeclined", uid, roomId);
+    }
+
+    public async Task InviteToCall(string friendId, string roomId)
+    {
+        var uid = UserId;
+        if (uid == null || uid == friendId) return;
+
+        var room = GetCallRoom(roomId);
+        if (room == null) return;
+        lock (_callLock)
+        {
+            if (!room.Members.Contains(uid)) return;
+            if (room.Members.Contains(friendId) || room.Invitees.Contains(friendId)) return;
+        }
+        if (!_data.GetFriendIds(uid).Contains(friendId)) return;
+
+        if (!IsOnline(friendId))
+        {
+            await Clients.Caller.SendAsync("CallOffline", friendId);
+            return;
+        }
+        if (IsInCall(friendId))
+        {
+            await Clients.Caller.SendAsync("CallBusy", friendId);
+            return;
+        }
+
+        lock (_callLock) room.Invitees.Add(friendId);
+
+        var me = _data.GetUserById(uid);
+        await SendToUser(friendId, "IncomingCall", new
+        {
+            roomId = room.Id,
+            type = room.Type,
+            groupId = room.GroupId,
+            groupName = room.GroupName,
+            fromId = uid,
+            fromName = me?.DisplayName,
+            fromAvatar = me?.AvatarPath,
+            fromColor = me?.AvatarColor
+        });
+    }
+
+    public async Task CallSignalRoom(string roomId, string toUserId, CallMessage msg)
     {
         var uid = UserId;
         if (uid == null || msg == null) return;
-
-        if (msg.Type == "offer")
+        var room = GetCallRoom(roomId);
+        if (room == null) return;
+        lock (_callLock)
         {
-            if (IsBusy(toUserId))
-            {
-                await Clients.Caller.SendAsync("CallBusy", toUserId);
-                return;
-            }
-            if (!IsOnline(toUserId))
-            {
-                await Clients.Caller.SendAsync("CallOffline", toUserId);
-                return;
-            }
+            if (!room.Members.Contains(uid) || !room.Members.Contains(toUserId)) return;
         }
-
-        if (msg.Type == "answer")
-        {
-            SetBusy(uid, true);
-            SetBusy(toUserId, true);
-        }
-
-        var sender = _data.GetUserById(uid);
-        var payload = new
-        {
-            from = uid,
-            fromName = sender?.DisplayName,
-            fromAvatar = sender?.AvatarPath,
-            fromColor = sender?.AvatarColor,
-            message = msg
-        };
-        await SendToUser(toUserId, "CallSignal", payload);
-    }
-
-    public async Task CallHangup(string toUserId)
-    {
-        var uid = UserId;
-        if (uid == null) return;
-        SetBusy(uid, false);
-        SetBusy(toUserId, false);
-        await SendToUser(toUserId, "CallEnded", uid);
-    }
-
-    public async Task CallDecline(string toUserId)
-    {
-        var uid = UserId;
-        if (uid == null) return;
-        SetBusy(uid, false);
-        SetBusy(toUserId, false);
-        await SendToUser(toUserId, "CallDeclined", uid);
+        await SendToUser(toUserId, "CallRoomSignal", new { roomId, from = uid, message = msg });
     }
 
     public static string GroupStatic(string a, string b)

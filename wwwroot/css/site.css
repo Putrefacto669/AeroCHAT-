@@ -1101,7 +1101,54 @@ audio { width: 200px; height: 32px; margin-top: 4px; border-radius: 8px; }
 .call-reject { background: var(--danger); color: #fff; }
 .call-reject:hover { filter: brightness(1.1); }
 .call-overlay.incoming .call-mute,
-.call-overlay.incoming .call-hangup { display: none; }
+.call-overlay.incoming .call-hangup,
+.call-overlay.incoming .call-cam { display: none; }
 .call-overlay:not(.incoming) .call-accept,
 .call-overlay:not(.incoming) .call-reject { display: none; }
+.call-cam { background: var(--surface2); border: 1px solid var(--border); }
+.call-cam:hover { background: var(--border); }
+.call-cam.off { background: var(--danger); color: #fff; }
+.call-invite { background: var(--surface2); border: 1px solid var(--border); }
+.call-invite:hover { background: var(--border); }
+.call-overlay:not(.active) .call-invite { display: none; }
+.call-overlay:not(.video) .call-cam,
+.call-overlay:not(.video) .call-videos { display: none; }
+
+.call-box { position: relative; display: flex; flex-direction: column; max-width: 92vw; max-height: 88vh; }
+.call-videos {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 8px; align-content: center; flex: 1 1 auto; min-height: 0;
+  margin-bottom: 14px; width: 100%;
+}
+.call-video-tile {
+  position: relative; background: #000; border-radius: 12px;
+  overflow: hidden; min-height: 140px; border: 1px solid var(--border);
+}
+.call-video-tile video { width: 100%; height: 100%; object-fit: cover; display: block; }
+.call-video-tile.local video { transform: scaleX(-1); }
+.call-info { flex: 0 0 auto; }
+.call-overlay.video .call-avatar { width: 64px; height: 64px; font-size: 1.6rem; margin-bottom: 8px; }
+
+.call-participants { display: flex; justify-content: center; gap: 6px; margin-top: 12px; flex-wrap: wrap; }
+.participant-chip {
+  width: 34px; height: 34px; border-radius: 50%; display: inline-flex; align-items: center;
+  justify-content: center; font-weight: 700; color: #fff; font-size: .9rem;
+  background: var(--accent); border: 2px solid var(--surface2); cursor: default;
+}
+
+.call-invite-modal {
+  position: fixed; left: 50%; top: 50%; transform: translate(-50%, -50%);
+  background: var(--surface); border: 1px solid var(--border); border-radius: 16px;
+  padding: 18px; width: min(320px, 88vw); box-shadow: 0 18px 60px rgba(0,0,0,.5);
+  z-index: 1001; text-align: left;
+}
+.call-invite-head { font-weight: 700; margin-bottom: 10px; }
+.call-invite-list { display: flex; flex-direction: column; gap: 6px; max-height: 300px; overflow-y: auto; margin-bottom: 12px; }
+.call-invite-item {
+  display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-radius: 10px;
+  cursor: pointer; background: var(--surface2); transition: background var(--transition);
+}
+.call-invite-item:hover { background: var(--border); }
+.call-invite-go { margin-left: auto; color: var(--accent); }
+.btn-invite-close { width: 100%; }
 
