@@ -50,12 +50,25 @@ public class ChatHub : Hub
     }
 
     private Task SendToUser(string userId, string method, object? arg)
+        => SendToUsers(new[] { userId }, method, arg);
+
+    private Task SendToUsers(IEnumerable<string> userIds, string method, object? arg)
     {
-        List<string> conns;
-        lock (_connLock)
-            conns = _connections.TryGetValue(userId, out var set) ? set.ToList() : new();
+        var conns = ResolveConnections(userIds);
         if (conns.Count == 0) return Task.CompletedTask;
         return Clients.Clients(conns).SendAsync(method, arg);
+    }
+
+    private static List<string> ResolveConnections(IEnumerable<string> userIds)
+    {
+        var conns = new List<string>();
+        lock (_connLock)
+        {
+            foreach (var id in userIds)
+                if (_connections.TryGetValue(id, out var set) && set.Count > 0)
+                    conns.AddRange(set);
+        }
+        return conns;
     }
 
     private static void Track(string userId, string connId)
@@ -103,13 +116,7 @@ public class ChatHub : Hub
 
     public static async Task NotifyUsers(IHubContext<ChatHub> ctx, IEnumerable<string> userIds, string method, object? arg)
     {
-        List<string> conns = new();
-        lock (_connLock)
-        {
-            foreach (var id in userIds)
-                if (_connections.TryGetValue(id, out var set) && set.Count > 0)
-                    conns.AddRange(set);
-        }
+        var conns = ResolveConnections(userIds);
         if (conns.Count > 0)
             await ctx.Clients.Clients(conns).SendAsync(method, arg);
     }
@@ -119,7 +126,7 @@ public class ChatHub : Hub
     {
         var uid = UserId;
         if (uid == null) return;
-        var group = GroupName(uid, otherId);
+        var group = GroupStatic(uid, otherId);
         await Groups.AddToGroupAsync(Context.ConnectionId, group);
     }
 
@@ -127,7 +134,7 @@ public class ChatHub : Hub
     {
         var uid = UserId;
         if (uid == null) return;
-        var group = GroupName(uid, otherId);
+        var group = GroupStatic(uid, otherId);
         await Groups.RemoveFromGroupAsync(Context.ConnectionId, group);
     }
 
@@ -150,7 +157,7 @@ public class ChatHub : Hub
             CreatedAt = DateTime.UtcNow
         });
 
-        var group = GroupName(uid, receiverId);
+        var group = GroupStatic(uid, receiverId);
         await Clients.Group(group).SendAsync("ReceiveMessage", msg);
     }
 
@@ -162,7 +169,7 @@ public class ChatHub : Hub
         var ok = _data.EditMessage(messageId, uid, newContent.Trim());
         if (!ok) return;
 
-        var group = GroupName(uid, receiverId);
+        var group = GroupStatic(uid, receiverId);
         await Clients.Group(group).SendAsync("MessageEdited", messageId, newContent.Trim(), DateTime.UtcNow);
     }
 
@@ -174,7 +181,7 @@ public class ChatHub : Hub
         var ok = _data.DeleteMessage(messageId, uid);
         if (!ok) return;
 
-        var group = GroupName(uid, receiverId);
+        var group = GroupStatic(uid, receiverId);
         await Clients.Group(group).SendAsync("MessageDeleted", messageId);
     }
 
@@ -183,7 +190,7 @@ public class ChatHub : Hub
         var uid = UserId;
         if (uid == null) return;
 
-        var group = GroupName(uid, receiverId);
+        var group = GroupStatic(uid, receiverId);
         await Clients.OthersInGroup(group).SendAsync("UserTyping", uid, displayName);
     }
 
@@ -192,7 +199,7 @@ public class ChatHub : Hub
         var uid = UserId;
         if (uid == null) return;
 
-        var group = GroupName(uid, receiverId);
+        var group = GroupStatic(uid, receiverId);
         await Clients.OthersInGroup(group).SendAsync("UserStoppedTyping", uid);
     }
 
@@ -422,5 +429,4 @@ public class ChatHub : Hub
         return $"chat_{arr[0]}_{arr[1]}";
     }
 
-    private static string GroupName(string a, string b) => GroupStatic(a, b);
 }

@@ -10,8 +10,14 @@ public class DataService
     private readonly string _messagesFile;
     private readonly string _groupsFile;
     private readonly string _statusesFile;
+    private readonly string _webRoot;
     private readonly JsonSerializerOptions _opts;
-    private readonly SemaphoreSlim _lock = new(1, 1);
+    private readonly object _lock = new();
+
+    private readonly List<User> _users;
+    private readonly List<Message> _messages;
+    private readonly List<Group> _groups;
+    private readonly List<Status> _statuses;
 
     public DataService(IWebHostEnvironment env)
     {
@@ -20,41 +26,74 @@ public class DataService
         _messagesFile = Path.Combine(_dataPath, "messages.json");
         _groupsFile = Path.Combine(_dataPath, "groups.json");
         _statusesFile = Path.Combine(_dataPath, "statuses.json");
+        _webRoot = env.WebRootPath ?? Path.Combine(env.ContentRootPath, "wwwroot");
         _opts = new JsonSerializerOptions
         {
             WriteIndented = true,
             PropertyNameCaseInsensitive = true,
             Converters = { new System.Text.Json.Serialization.JsonStringEnumConverter() }
         };
+
+        _users = LoadList<User>(_usersFile);
+        _messages = LoadList<Message>(_messagesFile);
+        _groups = LoadList<Group>(_groupsFile);
+        _statuses = LoadList<Status>(_statusesFile);
+    }
+
+    private List<T> LoadList<T>(string file)
+    {
+        try
+        {
+            if (!File.Exists(file)) return new();
+            return JsonSerializer.Deserialize<List<T>>(File.ReadAllText(file), _opts) ?? new();
+        }
+        catch
+        {
+            return new();
+        }
+    }
+
+    private void SaveList<T>(string file, List<T> data)
+    {
+        var tmp = file + ".tmp";
+        File.WriteAllText(tmp, JsonSerializer.Serialize(data, _opts));
+        if (File.Exists(file)) File.Move(tmp, file, true);
+        else File.Move(tmp, file);
     }
 
     // ── USERS ──────────────────────────────────────────────
     public List<User> GetUsers()
     {
-        if (!File.Exists(_usersFile)) return new();
-        var json = File.ReadAllText(_usersFile);
-        return JsonSerializer.Deserialize<List<User>>(json, _opts) ?? new();
+        lock (_lock) return _users.ToList();
     }
 
-    public User? GetUserById(string id) => GetUsers().FirstOrDefault(u => u.Id == id);
+    public User? GetUserById(string id)
+    {
+        lock (_lock) return _users.FirstOrDefault(u => u.Id == id);
+    }
 
     public User? GetUserByUsername(string username)
-        => GetUsers().FirstOrDefault(u => u.Username.Equals(username, StringComparison.OrdinalIgnoreCase));
+    {
+        lock (_lock)
+            return _users.FirstOrDefault(u => u.Username.Equals(username, StringComparison.OrdinalIgnoreCase));
+    }
 
     public User? ValidateLogin(string username, string password)
-        => GetUsers().FirstOrDefault(u =>
-            u.Username.Equals(username, StringComparison.OrdinalIgnoreCase) &&
-            u.Password == password);
+    {
+        lock (_lock)
+            return _users.FirstOrDefault(u =>
+                u.Username.Equals(username, StringComparison.OrdinalIgnoreCase) &&
+                u.Password == password);
+    }
 
     public bool UpdateUser(User updated)
     {
         lock (_lock)
         {
-            var users = GetUsers();
-            var idx = users.FindIndex(u => u.Id == updated.Id);
+            var idx = _users.FindIndex(u => u.Id == updated.Id);
             if (idx < 0) return false;
-            users[idx] = updated;
-            SaveUsers(users);
+            _users[idx] = updated;
+            SaveList(_usersFile, _users);
             return true;
         }
     }
@@ -63,8 +102,7 @@ public class DataService
     {
         lock (_lock)
         {
-            var users = GetUsers();
-            if (users.Any(u => u.Username.Equals(username, StringComparison.OrdinalIgnoreCase)))
+            if (_users.Any(u => u.Username.Equals(username, StringComparison.OrdinalIgnoreCase)))
                 return null;
 
             var user = new User
@@ -75,8 +113,8 @@ public class DataService
                 Password = password,
                 AvatarColor = $"#{Random.Shared.Next(0x1000000):X6}"
             };
-            users.Add(user);
-            SaveUsers(users);
+            _users.Add(user);
+            SaveList(_usersFile, _users);
             return user;
         }
     }
@@ -84,44 +122,56 @@ public class DataService
     // ── FRIENDS ────────────────────────────────────────
     public FriendState GetFriendState(string userId, string otherId)
     {
-        var users = GetUsers();
-        var me = users.FirstOrDefault(u => u.Id == userId);
-        var other = users.FirstOrDefault(u => u.Id == otherId);
-        if (me == null || other == null) return FriendState.None;
+        lock (_lock)
+        {
+            var me = _users.FirstOrDefault(u => u.Id == userId);
+            var other = _users.FirstOrDefault(u => u.Id == otherId);
+            if (me == null || other == null) return FriendState.None;
 
-        if (me.FriendIds.Contains(otherId) || other.FriendIds.Contains(userId))
-            return FriendState.Friends;
-        if (other.FriendRequests.Any(r => r.FromUserId == userId))
-            return FriendState.Outgoing;
-        if (me.FriendRequests.Any(r => r.FromUserId == otherId))
-            return FriendState.Incoming;
-        return FriendState.None;
+            if (me.FriendIds.Contains(otherId) || other.FriendIds.Contains(userId))
+                return FriendState.Friends;
+            if (other.FriendRequests.Any(r => r.FromUserId == userId))
+                return FriendState.Outgoing;
+            if (me.FriendRequests.Any(r => r.FromUserId == otherId))
+                return FriendState.Incoming;
+            return FriendState.None;
+        }
     }
 
     public string? GetIncomingRequestId(string userId, string otherId)
-        => GetUserById(userId)?.FriendRequests.FirstOrDefault(r => r.FromUserId == otherId)?.Id;
+    {
+        lock (_lock)
+            return _users.FirstOrDefault(u => u.Id == userId)?
+                .FriendRequests.FirstOrDefault(r => r.FromUserId == otherId)?.Id;
+    }
 
     public List<string> GetFriendIds(string userId)
     {
-        var me = GetUserById(userId);
-        if (me == null) return new();
-        return me.FriendIds.Where(id => GetUserById(id) != null).ToList();
+        lock (_lock)
+        {
+            var me = _users.FirstOrDefault(u => u.Id == userId);
+            if (me == null) return new();
+            return me.FriendIds.Where(id => _users.Any(u => u.Id == id)).ToList();
+        }
     }
 
     public List<SidebarUserItem> GetSidebarItems(string userId)
     {
-        var me = GetUserById(userId);
-        if (me == null) return new();
-        var items = new List<SidebarUserItem>();
-        foreach (var u in GetUsers().Where(x => x.Id != userId))
+        lock (_lock)
         {
-            var state = GetFriendState(userId, u.Id);
-            var item = new SidebarUserItem { User = u, State = state.ToString().ToLowerInvariant() };
-            if (state == FriendState.Incoming)
-                item.RequestId = me.FriendRequests.FirstOrDefault(r => r.FromUserId == u.Id)?.Id ?? "";
-            items.Add(item);
+            var me = _users.FirstOrDefault(u => u.Id == userId);
+            if (me == null) return new();
+            var items = new List<SidebarUserItem>();
+            foreach (var u in _users.Where(x => x.Id != userId))
+            {
+                var state = GetFriendState(userId, u.Id);
+                var item = new SidebarUserItem { User = u, State = state.ToString().ToLowerInvariant() };
+                if (state == FriendState.Incoming)
+                    item.RequestId = me.FriendRequests.FirstOrDefault(r => r.FromUserId == u.Id)?.Id ?? "";
+                items.Add(item);
+            }
+            return items;
         }
-        return items;
     }
 
     public FriendRequestResult SendFriendRequest(string fromId, string toId)
@@ -129,9 +179,8 @@ public class DataService
         if (fromId == toId) return FriendRequestResult.Self;
         lock (_lock)
         {
-            var users = GetUsers();
-            var from = users.FirstOrDefault(u => u.Id == fromId);
-            var to = users.FirstOrDefault(u => u.Id == toId);
+            var from = _users.FirstOrDefault(u => u.Id == fromId);
+            var to = _users.FirstOrDefault(u => u.Id == toId);
             if (from == null || to == null) return FriendRequestResult.NotFound;
             if (from.FriendIds.Contains(toId) || to.FriendIds.Contains(fromId))
                 return FriendRequestResult.AlreadyFriends;
@@ -146,7 +195,7 @@ public class DataService
                 ToUserId = toId,
                 CreatedAt = DateTime.UtcNow
             });
-            SaveUsers(users);
+            SaveList(_usersFile, _users);
             return FriendRequestResult.Sent;
         }
     }
@@ -155,18 +204,17 @@ public class DataService
     {
         lock (_lock)
         {
-            var users = GetUsers();
-            var me = users.FirstOrDefault(u => u.Id == userId);
+            var me = _users.FirstOrDefault(u => u.Id == userId);
             if (me == null) return null;
             var req = me.FriendRequests.FirstOrDefault(r => r.Id == requestId);
             if (req == null) return null;
-            var sender = users.FirstOrDefault(u => u.Id == req.FromUserId);
+            var sender = _users.FirstOrDefault(u => u.Id == req.FromUserId);
             if (sender == null) return null;
 
             me.FriendRequests.Remove(req);
             if (!me.FriendIds.Contains(sender.Id)) me.FriendIds.Add(sender.Id);
             if (!sender.FriendIds.Contains(me.Id)) sender.FriendIds.Add(me.Id);
-            SaveUsers(users);
+            SaveList(_usersFile, _users);
             return sender.Id;
         }
     }
@@ -175,13 +223,12 @@ public class DataService
     {
         lock (_lock)
         {
-            var users = GetUsers();
-            var me = users.FirstOrDefault(u => u.Id == userId);
+            var me = _users.FirstOrDefault(u => u.Id == userId);
             if (me == null) return null;
             var req = me.FriendRequests.FirstOrDefault(r => r.Id == requestId);
             if (req == null) return null;
             me.FriendRequests.Remove(req);
-            SaveUsers(users);
+            SaveList(_usersFile, _users);
             return req.FromUserId;
         }
     }
@@ -190,11 +237,10 @@ public class DataService
     {
         lock (_lock)
         {
-            var users = GetUsers();
-            var to = users.FirstOrDefault(u => u.Id == toId);
+            var to = _users.FirstOrDefault(u => u.Id == toId);
             if (to == null) return false;
             var removed = to.FriendRequests.RemoveAll(r => r.FromUserId == fromId && r.ToUserId == toId) > 0;
-            if (removed) SaveUsers(users);
+            if (removed) SaveList(_usersFile, _users);
             return removed;
         }
     }
@@ -203,12 +249,11 @@ public class DataService
     {
         lock (_lock)
         {
-            var users = GetUsers();
-            var me = users.FirstOrDefault(u => u.Id == userId);
-            var friend = users.FirstOrDefault(u => u.Id == friendId);
+            var me = _users.FirstOrDefault(u => u.Id == userId);
+            var friend = _users.FirstOrDefault(u => u.Id == friendId);
             if (me == null || friend == null) return false;
             var removed = me.FriendIds.Remove(friendId) | friend.FriendIds.Remove(userId);
-            if (removed) SaveUsers(users);
+            if (removed) SaveList(_usersFile, _users);
             return removed;
         }
     }
@@ -216,85 +261,90 @@ public class DataService
     // ── MESSAGES ───────────────────────────────────────────
     public List<Message> GetMessages()
     {
-        if (!File.Exists(_messagesFile)) return new();
-        var json = File.ReadAllText(_messagesFile);
-        return JsonSerializer.Deserialize<List<Message>>(json, _opts) ?? new();
+        lock (_lock) return _messages.ToList();
     }
 
     public List<Message> GetConversation(string userId1, string userId2)
-        => GetMessages()
-            .Where(m => !m.IsDeleted &&
-                ((m.SenderId == userId1 && m.ReceiverId == userId2) ||
-                 (m.SenderId == userId2 && m.ReceiverId == userId1)))
-            .OrderBy(m => m.CreatedAt)
-            .ToList();
+    {
+        lock (_lock)
+            return _messages
+                .Where(m => !m.IsDeleted && m.Scope == MessageScope.Direct &&
+                    ((m.SenderId == userId1 && m.ReceiverId == userId2) ||
+                     (m.SenderId == userId2 && m.ReceiverId == userId1)))
+                .OrderBy(m => m.CreatedAt)
+                .ToList();
+    }
 
     public Message AddMessage(Message message)
     {
-        var messages = GetMessages();
-        messages.Add(message);
-        SaveMessages(messages);
+        lock (_lock)
+        {
+            message.Scope = MessageScope.Direct;
+            _messages.Add(message);
+            SaveList(_messagesFile, _messages);
+        }
         return message;
     }
 
     public bool EditMessage(string messageId, string userId, string newContent)
     {
-        var messages = GetMessages();
-        var msg = messages.FirstOrDefault(m => m.Id == messageId && m.SenderId == userId);
-        if (msg == null || msg.Type != MessageType.Text) return false;
-        msg.Content = newContent;
-        msg.EditedAt = DateTime.UtcNow;
-        SaveMessages(messages);
-        return true;
+        lock (_lock)
+        {
+            var msg = _messages.FirstOrDefault(m => m.Id == messageId && m.SenderId == userId);
+            if (msg == null || msg.Type != MessageType.Text) return false;
+            msg.Content = newContent;
+            msg.EditedAt = DateTime.UtcNow;
+            SaveList(_messagesFile, _messages);
+            return true;
+        }
     }
 
     public bool DeleteMessage(string messageId, string userId)
     {
-        var messages = GetMessages();
-        var msg = messages.FirstOrDefault(m => m.Id == messageId && m.SenderId == userId);
-        if (msg == null) return false;
-        msg.IsDeleted = true;
-        msg.Content = "Mensaje eliminado";
-        SaveMessages(messages);
-        return true;
+        lock (_lock)
+        {
+            var msg = _messages.FirstOrDefault(m => m.Id == messageId && m.SenderId == userId);
+            if (msg == null) return false;
+            msg.IsDeleted = true;
+            msg.Content = "Mensaje eliminado";
+            DeleteUploadedFile(msg.FilePath);
+            SaveList(_messagesFile, _messages);
+            return true;
+        }
     }
-
-    private void SaveMessages(List<Message> messages)
-        => File.WriteAllText(_messagesFile, JsonSerializer.Serialize(messages, _opts));
-
-    private void SaveUsers(List<User> users)
-        => File.WriteAllText(_usersFile, JsonSerializer.Serialize(users, _opts));
 
     // ── GROUPS ────────────────────────────────────────
     public List<Group> GetGroups()
     {
-        if (!File.Exists(_groupsFile)) return new();
-        var json = File.ReadAllText(_groupsFile);
-        return JsonSerializer.Deserialize<List<Group>>(json, _opts) ?? new();
+        lock (_lock) return _groups.ToList();
     }
 
-    private void SaveGroups(List<Group> groups)
-        => File.WriteAllText(_groupsFile, JsonSerializer.Serialize(groups, _opts));
-
-    public Group? GetGroup(string id) => GetGroups().FirstOrDefault(g => g.Id == id);
+    public Group? GetGroup(string id)
+    {
+        lock (_lock) return _groups.FirstOrDefault(g => g.Id == id);
+    }
 
     public List<Group> GetGroupsForUser(string userId)
-        => GetGroups().Where(g => g.MemberIds.Contains(userId)).OrderBy(g => g.Name).ToList();
+    {
+        lock (_lock)
+            return _groups.Where(g => g.MemberIds.Contains(userId)).OrderBy(g => g.Name).ToList();
+    }
 
     public bool IsGroupMember(string groupId, string userId)
-        => GetGroup(groupId)?.MemberIds.Contains(userId) ?? false;
+    {
+        lock (_lock) return _groups.FirstOrDefault(g => g.Id == groupId)?.MemberIds.Contains(userId) ?? false;
+    }
 
     public Group? CreateGroup(string name, string ownerId, List<string> memberIds)
     {
         if (string.IsNullOrWhiteSpace(name)) return null;
         lock (_lock)
         {
-            var groups = GetGroups();
             var members = memberIds.Where(id => !string.IsNullOrEmpty(id)).Distinct().ToList();
             if (!members.Contains(ownerId)) members.Add(ownerId);
             var group = new Group { Name = name.Trim(), OwnerId = ownerId, MemberIds = members };
-            groups.Add(group);
-            SaveGroups(groups);
+            _groups.Add(group);
+            SaveList(_groupsFile, _groups);
             return group;
         }
     }
@@ -303,81 +353,85 @@ public class DataService
     {
         lock (_lock)
         {
-            var groups = GetGroups();
-            var g = groups.FirstOrDefault(x => x.Id == groupId);
+            var g = _groups.FirstOrDefault(x => x.Id == groupId);
             if (g == null || !g.MemberIds.Remove(memberId)) return false;
-            if (g.MemberIds.Count == 0) groups.Remove(g);
-            SaveGroups(groups);
+            if (g.MemberIds.Count == 0) _groups.Remove(g);
+            SaveList(_groupsFile, _groups);
             return true;
         }
     }
 
     public List<User> GetGroupMembers(Group group)
     {
-        var users = GetUsers();
-        return group.MemberIds
-            .Select(id => users.FirstOrDefault(u => u.Id == id))
-            .Where(u => u != null)
-            .Select(u => u!)
-            .ToList();
+        lock (_lock)
+            return group.MemberIds
+                .Select(id => _users.FirstOrDefault(u => u.Id == id))
+                .Where(u => u != null)
+                .Select(u => u!)
+                .ToList();
     }
 
     public List<Message> GetGroupMessages(string groupId)
-        => GetMessages()
-            .Where(m => m.ReceiverId == groupId && !m.IsDeleted)
-            .OrderBy(m => m.CreatedAt)
-            .ToList();
+    {
+        lock (_lock)
+            return _messages
+                .Where(m => m.Scope == MessageScope.Group && m.ReceiverId == groupId && !m.IsDeleted)
+                .OrderBy(m => m.CreatedAt)
+                .ToList();
+    }
 
     public Message AddGroupMessage(Message message)
     {
-        var messages = GetMessages();
-        messages.Add(message);
-        SaveMessages(messages);
+        lock (_lock)
+        {
+            message.Scope = MessageScope.Group;
+            _messages.Add(message);
+            SaveList(_messagesFile, _messages);
+        }
         return message;
     }
 
     public bool EditGroupMessage(string groupId, string messageId, string userId, string newContent)
     {
-        var messages = GetMessages();
-        var msg = messages.FirstOrDefault(m =>
-            m.Id == messageId && m.ReceiverId == groupId && m.SenderId == userId);
-        if (msg == null || msg.Type != MessageType.Text) return false;
-        msg.Content = newContent;
-        msg.EditedAt = DateTime.UtcNow;
-        SaveMessages(messages);
-        return true;
+        lock (_lock)
+        {
+            var msg = _messages.FirstOrDefault(m =>
+                m.Id == messageId && m.ReceiverId == groupId && m.SenderId == userId);
+            if (msg == null || msg.Type != MessageType.Text) return false;
+            msg.Content = newContent;
+            msg.EditedAt = DateTime.UtcNow;
+            SaveList(_messagesFile, _messages);
+            return true;
+        }
     }
 
     public bool DeleteGroupMessage(string groupId, string messageId, string userId)
     {
-        var messages = GetMessages();
-        var msg = messages.FirstOrDefault(m =>
-            m.Id == messageId && m.ReceiverId == groupId && m.SenderId == userId);
-        if (msg == null) return false;
-        msg.IsDeleted = true;
-        msg.Content = "Mensaje eliminado";
-        SaveMessages(messages);
-        return true;
+        lock (_lock)
+        {
+            var msg = _messages.FirstOrDefault(m =>
+                m.Id == messageId && m.ReceiverId == groupId && m.SenderId == userId);
+            if (msg == null) return false;
+            msg.IsDeleted = true;
+            msg.Content = "Mensaje eliminado";
+            DeleteUploadedFile(msg.FilePath);
+            SaveList(_messagesFile, _messages);
+            return true;
+        }
     }
 
     // ── STATUSES ──────────────────────────────────────────
     public List<Status> GetStatuses()
     {
-        if (!File.Exists(_statusesFile)) return new();
-        var json = File.ReadAllText(_statusesFile);
-        return JsonSerializer.Deserialize<List<Status>>(json, _opts) ?? new();
+        lock (_lock) return _statuses.ToList();
     }
-
-    private void SaveStatuses(List<Status> statuses)
-        => File.WriteAllText(_statusesFile, JsonSerializer.Serialize(statuses, _opts));
 
     public Status? AddStatus(Status status)
     {
         lock (_lock)
         {
-            var statuses = GetStatuses();
-            statuses.Add(status);
-            SaveStatuses(statuses);
+            _statuses.Add(status);
+            SaveList(_statusesFile, _statuses);
             return status;
         }
     }
@@ -386,24 +440,43 @@ public class DataService
     {
         lock (_lock)
         {
-            var statuses = GetStatuses();
-            var s = statuses.FirstOrDefault(x => x.Id == statusId && x.UserId == userId);
+            var s = _statuses.FirstOrDefault(x => x.Id == statusId && x.UserId == userId);
             if (s == null) return false;
-            statuses.Remove(s);
-            SaveStatuses(statuses);
+            _statuses.Remove(s);
+            DeleteUploadedFile(s.FilePath);
+            SaveList(_statusesFile, _statuses);
             return true;
         }
     }
 
     public List<Status> GetVisibleStatuses(string userId)
     {
-        var cutoff = DateTime.UtcNow.AddHours(-24);
-        var friendIds = GetFriendIds(userId);
-        return GetStatuses()
-            .Where(s => s.CreatedAt >= cutoff && (s.UserId == userId || friendIds.Contains(s.UserId)))
-            .OrderBy(s => s.UserId)
-            .ThenBy(s => s.CreatedAt)
-            .ToList();
+        lock (_lock)
+        {
+            var cutoff = DateTime.UtcNow.AddHours(-24);
+            var friendIds = GetFriendIds(userId);
+            return _statuses
+                .Where(s => s.CreatedAt >= cutoff && (s.UserId == userId || friendIds.Contains(s.UserId)))
+                .OrderBy(s => s.UserId)
+                .ThenBy(s => s.CreatedAt)
+                .ToList();
+        }
+    }
+
+    // ── FILE CLEANUP ──────────────────────────────────────
+    private void DeleteUploadedFile(string? path)
+    {
+        if (string.IsNullOrWhiteSpace(path)) return;
+        try
+        {
+            var full = Path.GetFullPath(Path.Combine(_webRoot, path.TrimStart('/').Replace('/', Path.DirectorySeparatorChar)));
+            if (full.StartsWith(_webRoot, StringComparison.OrdinalIgnoreCase) && File.Exists(full))
+                File.Delete(full);
+        }
+        catch
+        {
+            // best effort
+        }
     }
 
     // ── HELPERS ────────────────────────────────────────────

@@ -109,8 +109,12 @@ public class ProfileController : Controller
 
         if (avatarFile != null && avatarFile.Length > 0 && avatarFile.Length <= MaxFileSize)
         {
-            user.AvatarPath = await SaveImage(avatarFile, "avatars");
-            _data.UpdateUser(user);
+            var path = await SaveImage(avatarFile, "avatars");
+            if (path != null)
+            {
+                user.AvatarPath = path;
+                _data.UpdateUser(user);
+            }
         }
 
         return RedirectToAction("Index", new { id = user.Id });
@@ -126,21 +130,38 @@ public class ProfileController : Controller
 
         if (bannerFile != null && bannerFile.Length > 0 && bannerFile.Length <= MaxFileSize)
         {
-            user.BannerPath = await SaveImage(bannerFile, "banners");
-            _data.UpdateUser(user);
+            var path = await SaveImage(bannerFile, "banners");
+            if (path != null)
+            {
+                user.BannerPath = path;
+                _data.UpdateUser(user);
+            }
         }
 
         return RedirectToAction("Index", new { id = user.Id });
     }
 
-    private async Task<string> SaveImage(IFormFile file, string folder)
+    private async Task<string?> SaveImage(IFormFile file, string folder)
     {
         var ext = Path.GetExtension(file.FileName).ToLower();
+        if (UploadValidation.IsBlockedExtension(ext) || !UploadValidation.IsImageExtension(ext))
+            return null;
+
         var dir = Path.Combine(_env.WebRootPath, "uploads", folder);
         Directory.CreateDirectory(dir);
         var name = $"{Guid.NewGuid()}{ext}";
-        await using var stream = new FileStream(Path.Combine(dir, name), FileMode.Create);
-        await file.CopyToAsync(stream);
+        var fullPath = Path.Combine(dir, name);
+
+        var head = new byte[16];
+        await using (var src = file.OpenReadStream())
+        {
+            var n = await src.ReadAsync(head, 0, head.Length);
+            if (n == 0 || !UploadValidation.HasValidImageSignature(ext, head.AsSpan(0, n).ToArray()))
+                return null;
+            src.Position = 0;
+            await using var dest = new FileStream(fullPath, FileMode.Create);
+            await src.CopyToAsync(dest);
+        }
         return $"/uploads/{folder}/{name}";
     }
 }

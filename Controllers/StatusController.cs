@@ -104,8 +104,20 @@ public class StatusController : Controller
             var dir = Path.Combine(_env.WebRootPath, "uploads", "statuses");
             Directory.CreateDirectory(dir);
             var safeName = $"{Guid.NewGuid()}{ext}";
-            await using (var stream = new FileStream(Path.Combine(dir, safeName), FileMode.Create))
-                await image.CopyToAsync(stream);
+
+            var head = new byte[16];
+            await using (var src = image.OpenReadStream())
+            {
+                var n = await src.ReadAsync(head, 0, head.Length);
+                if (n == 0 || !UploadValidation.HasValidImageSignature(ext, head.AsSpan(0, n).ToArray()))
+                {
+                    TempData["Error"] = "El archivo no es una imagen válida.";
+                    return RedirectToAction("Index");
+                }
+                src.Position = 0;
+                await using var dest = new FileStream(Path.Combine(dir, safeName), FileMode.Create);
+                await src.CopyToAsync(dest);
+            }
 
             status.Type = StatusType.Image;
             status.FilePath = $"/uploads/statuses/{safeName}";

@@ -43,6 +43,7 @@ public class Message
     public string ReceiverId { get; set; } = "";
     public string Content { get; set; } = "";
     public MessageType Type { get; set; } = MessageType.Text;
+    public MessageScope Scope { get; set; } = MessageScope.Direct;
     public string? FileName { get; set; }
     public string? FilePath { get; set; }
     public long? FileSize { get; set; }
@@ -52,6 +53,8 @@ public class Message
 }
 
 public enum MessageType { Text, Image, Audio, Document, Video }
+
+public enum MessageScope { Direct, Group }
 
 public class Group
 {

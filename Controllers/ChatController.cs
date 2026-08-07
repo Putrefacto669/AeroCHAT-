@@ -77,7 +77,13 @@ public class ChatController : Controller
 
         var ext = Path.GetExtension(file.FileName).ToLower();
         if (string.IsNullOrEmpty(ext)) ext = ".file";
-        var type = GetMessageType(ext);
+
+        if (UploadValidation.IsBlockedExtension(ext) || !UploadValidation.IsAllowedExtension(ext))
+        {
+            TempData["Error"] = "Tipo de archivo no permitido.";
+            return RedirectToAction("Conversation", new { id = receiverId });
+        }
+        var type = UploadValidation.GetMessageType(ext);
 
         var limit = type == MessageType.Video ? MaxVideoSize : MaxFileSize;
         if (file.Length > limit)
@@ -98,8 +104,29 @@ public class ChatController : Controller
         var dir = Path.Combine(_env.WebRootPath, "uploads", folder);
         Directory.CreateDirectory(dir);
         var safeName = $"{Guid.NewGuid()}{ext}";
-        await using (var stream = new FileStream(Path.Combine(dir, safeName), FileMode.Create))
+        var fullPath = Path.Combine(dir, safeName);
+
+        if (type == MessageType.Image)
+        {
+            var head = new byte[16];
+            await using (var src = file.OpenReadStream())
+            {
+                var n = await src.ReadAsync(head, 0, head.Length);
+                if (n == 0 || !UploadValidation.HasValidImageSignature(ext, head.AsSpan(0, n).ToArray()))
+                {
+                    TempData["Error"] = "El archivo no es una imagen válida.";
+                    return RedirectToAction("Conversation", new { id = receiverId });
+                }
+                src.Position = 0;
+                await using var dest = new FileStream(fullPath, FileMode.Create);
+                await src.CopyToAsync(dest);
+            }
+        }
+        else
+        {
+            await using var stream = new FileStream(fullPath, FileMode.Create);
             await file.CopyToAsync(stream);
+        }
 
         var msg = _data.AddMessage(new Message
         {
@@ -116,12 +143,4 @@ public class ChatController : Controller
 
         return RedirectToAction("Conversation", new { id = receiverId });
     }
-
-    private static MessageType GetMessageType(string ext) => ext switch
-    {
-        ".jpg" or ".jpeg" or ".png" or ".gif" or ".webp" => MessageType.Image,
-        ".mp3" or ".ogg" or ".wav" or ".m4a" or ".aac" => MessageType.Audio,
-        ".mp4" or ".webm" or ".ogv" or ".mov" or ".mkv" or ".avi" => MessageType.Video,
-        _ => MessageType.Document
-    };
 }
