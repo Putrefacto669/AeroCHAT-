@@ -82,14 +82,29 @@
       if (skip) skip.addEventListener('click', dismiss);
       ov.addEventListener('click', function (e) { if (e.target === ov) dismiss(); });
       var sound = document.getElementById('introSound');
+      var offIco = document.getElementById('introSoundOff');
+      var onIco = document.getElementById('introSoundOn');
+      function setSound(on) {
+        v.muted = !on;
+        if (bg) bg.muted = !on;
+        if (offIco) offIco.hidden = on;
+        if (onIco) onIco.hidden = !on;
+      }
       if (sound) sound.addEventListener('click', function () {
-        v.muted = !v.muted;
-        if (bg) bg.muted = v.muted;
-        var off = document.getElementById('introSoundOff');
-        var on = document.getElementById('introSoundOn');
-        if (off) off.hidden = v.muted;
-        if (on) on.hidden = !v.muted;
+        setSound(v.muted);
         if (!v.muted) start(v);
+      });
+      var gestureDone = false;
+      function enableSound(e) {
+        if (gestureDone) return;
+        var t = e && e.target;
+        if (t && t.closest && t.closest('.intro-sound')) return;
+        gestureDone = true;
+        setSound(true);
+        start(v);
+      }
+      ['pointerdown', 'keydown', 'touchstart'].forEach(function (evt) {
+        document.addEventListener(evt, enableSound, { once: true, passive: true });
       });
       if (!v.readyState) setTimeout(dismiss, 9000);
     })();
