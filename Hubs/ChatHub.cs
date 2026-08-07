@@ -407,6 +407,8 @@ public class ChatHub : Hub
             CreatedAt = DateTime.UtcNow
         });
 
+        _data.RecordStickerUse(uid, stickerPath);
+
         var group = GroupStatic(uid, receiverId);
         await Clients.Group(group).SendAsync("ReceiveMessage", msg);
     }
@@ -417,7 +419,6 @@ public class ChatHub : Hub
         if (uid == null || !IsValidStickerPath(stickerPath)) return;
         if (!stickerPath.StartsWith("/stickers/" + uid + "/", StringComparison.OrdinalIgnoreCase)) return;
         if (!_data.IsGroupMember(groupId, uid)) return;
-
         var sender = _data.GetUserById(uid);
         if (sender == null) return;
 
@@ -432,6 +433,9 @@ public class ChatHub : Hub
             FilePath = stickerPath,
             CreatedAt = DateTime.UtcNow
         });
+
+        _data.RecordStickerUse(uid, stickerPath);
+
         await Clients.Group(GroupGroupStatic(groupId)).SendAsync("ReceiveGroupMessage", msg);
     }
 

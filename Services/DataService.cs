@@ -10,6 +10,7 @@ public class DataService
     private readonly string _messagesFile;
     private readonly string _groupsFile;
     private readonly string _statusesFile;
+    private readonly string _stickerLibsFile;
     private readonly IFileStorage _storage;
     private readonly JsonSerializerOptions _opts;
     private readonly object _lock = new();
@@ -18,6 +19,7 @@ public class DataService
     private readonly List<Message> _messages;
     private readonly List<Group> _groups;
     private readonly List<Status> _statuses;
+    private readonly List<StickerLibrary> _stickerLibs;
 
     public DataService(IWebHostEnvironment env, IFileStorage storage)
     {
@@ -26,6 +28,7 @@ public class DataService
         _messagesFile = Path.Combine(_dataPath, "messages.json");
         _groupsFile = Path.Combine(_dataPath, "groups.json");
         _statusesFile = Path.Combine(_dataPath, "statuses.json");
+        _stickerLibsFile = Path.Combine(_dataPath, "stickerlibs.json");
         _storage = storage;
         _opts = new JsonSerializerOptions
         {
@@ -38,6 +41,7 @@ public class DataService
         _messages = LoadList<Message>(_messagesFile);
         _groups = LoadList<Group>(_groupsFile);
         _statuses = LoadList<Status>(_statusesFile);
+        _stickerLibs = LoadList<StickerLibrary>(_stickerLibsFile);
     }
 
     private List<T> LoadList<T>(string file)
@@ -637,5 +641,55 @@ public class DataService
         }
 
         return null;
+    }
+
+    // ── STICKER LIBRARY (favoritos, usos, nombres de paquete) ──
+    public StickerLibrary GetStickerLibrary(string userId)
+    {
+        lock (_lock)
+        {
+            var lib = _stickerLibs.FirstOrDefault(s => s.UserId == userId);
+            if (lib == null)
+            {
+                lib = new StickerLibrary { UserId = userId };
+                _stickerLibs.Add(lib);
+                SaveList(_stickerLibsFile, _stickerLibs);
+            }
+            return lib;
+        }
+    }
+
+    public bool ToggleFavorite(string userId, string path)
+    {
+        lock (_lock)
+        {
+            var lib = GetStickerLibrary(userId);
+            var fav = !lib.Favorites.Contains(path);
+            if (fav) lib.Favorites.Add(path);
+            else lib.Favorites.Remove(path);
+            SaveList(_stickerLibsFile, _stickerLibs);
+            return fav;
+        }
+    }
+
+    public void RecordStickerUse(string userId, string path)
+    {
+        lock (_lock)
+        {
+            var lib = GetStickerLibrary(userId);
+            lib.Usage.TryGetValue(path, out var n);
+            lib.Usage[path] = n + 1;
+            SaveList(_stickerLibsFile, _stickerLibs);
+        }
+    }
+
+    public void SetPackName(string userId, string packId, string name)
+    {
+        lock (_lock)
+        {
+            var lib = GetStickerLibrary(userId);
+            lib.PackNames[packId] = name;
+            SaveList(_stickerLibsFile, _stickerLibs);
+        }
     }
 }

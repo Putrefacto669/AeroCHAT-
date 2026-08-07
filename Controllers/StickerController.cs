@@ -1,5 +1,6 @@
 using System.Text.Json;
 using System.Text.RegularExpressions;
+using AeroChat.Services;
 using Microsoft.AspNetCore.Mvc;
 
 namespace AeroChat.Controllers;
@@ -8,15 +9,17 @@ public class StickerController : Controller
 {
     private readonly IWebHostEnvironment _env;
     private readonly HttpClient _http;
+    private readonly DataService _data;
     private const string PackApi = "https://api.sticker.ly/v3.1/stickerPack/{0}";
     private const string ApiUserAgent = "androidapp.stickerly/1.13.3 (G011A; U; Android 22; pt-BR; br;)";
     private const int MaxStickers = 100;
     private const int MaxStickerBytes = 3 * 1024 * 1024;
 
-    public StickerController(IWebHostEnvironment env, HttpClient http)
+    public StickerController(IWebHostEnvironment env, HttpClient http, DataService data)
     {
         _env = env;
         _http = http;
+        _data = data;
     }
 
     private string? CurrentUserId => HttpContext.Session.GetString("UserId");
@@ -31,25 +34,55 @@ public class StickerController : Controller
     public IActionResult List()
     {
         var a = Auth(); if (a != null) return a;
-        var dir = UserStickerDir(CurrentUserId!);
-        var list = new List<object>();
-        if (Directory.Exists(dir))
+        var uid = CurrentUserId!;
+        var lib = _data.GetStickerLibrary(uid);
+        var baseDir = Path.Combine(_env.WebRootPath, "stickers", uid);
+        var packs = new List<object>();
+
+        if (Directory.Exists(baseDir))
         {
-            foreach (var f in Directory.GetFiles(dir, "*.*", SearchOption.AllDirectories)
-                .Where(f => Path.GetExtension(f).ToLowerInvariant() is ".png" or ".webp" or ".gif")
-                .OrderBy(f => f, StringComparer.OrdinalIgnoreCase))
+            foreach (var packDir in Directory.GetDirectories(baseDir).OrderBy(d => d, StringComparer.OrdinalIgnoreCase))
             {
-                var rel = Path.GetRelativePath(_env.WebRootPath, f).Replace('\\', '/');
-                var ext = Path.GetExtension(f).ToLowerInvariant();
-                list.Add(new
+                var packId = Path.GetFileName(packDir);
+                var stickers = new List<object>();
+                foreach (var f in Directory.GetFiles(packDir)
+                    .Where(f => Path.GetExtension(f).ToLowerInvariant() is ".png" or ".webp" or ".gif")
+                    .OrderBy(f => f, StringComparer.OrdinalIgnoreCase))
                 {
-                    path = "/" + rel,
-                    name = Path.GetFileName(f),
-                    animated = ext is ".gif" or ".webp"
-                });
+                    var rel = "/" + Path.GetRelativePath(_env.WebRootPath, f).Replace('\\', '/');
+                    var ext = Path.GetExtension(f).ToLowerInvariant();
+                    stickers.Add(new
+                    {
+                        path = rel,
+                        name = Path.GetFileName(f),
+                        animated = ext is ".gif" or ".webp",
+                        fav = lib.Favorites.Contains(rel),
+                        uses = lib.Usage.TryGetValue(rel, out var u) ? u : 0
+                    });
+                }
+                if (stickers.Count > 0)
+                {
+                    packs.Add(new
+                    {
+                        packId,
+                        name = lib.PackNames.TryGetValue(packId, out var pn) && !string.IsNullOrEmpty(pn) ? pn : packId,
+                        stickers
+                    });
+                }
             }
         }
-        return Json(list);
+        return Json(packs);
+    }
+
+    [HttpPost]
+    public IActionResult Favorite(string path)
+    {
+        var a = Auth(); if (a != null) return a;
+        var uid = CurrentUserId!;
+        if (string.IsNullOrWhiteSpace(path) || !path.StartsWith("/stickers/" + uid + "/"))
+            return Json(new { ok = false });
+        var fav = _data.ToggleFavorite(uid, path);
+        return Json(new { ok = true, fav });
     }
 
     [HttpPost]
@@ -150,6 +183,7 @@ public class StickerController : Controller
                 if (count == 0)
                     return Json(new { ok = false, message = "No se pudo descargar ningún sticker" });
 
+                _data.SetPackName(uid, packId, name);
                 return Json(new { ok = true, name, author, count });
             }
         }

@@ -155,3 +155,11 @@ public class ProfileViewModel
     public string? RequestId { get; set; }
     public string? YoutubeEmbedId { get; set; }
 }
+
+public class StickerLibrary
+{
+    public string UserId { get; set; } = "";
+    public List<string> Favorites { get; set; } = new();
+    public Dictionary<string, int> Usage { get; set; } = new();
+    public Dictionary<string, string> PackNames { get; set; } = new();
+}
