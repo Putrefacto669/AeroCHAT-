@@ -543,11 +543,13 @@
     var metaHtml = '<div class="msg-meta"><span class="msg-time">' + formatTime(msg.createdAt) + '</span>' + seenHtml + '</div>';
 
     var reactionsHtml = '';
-    if (!msg.isDeleted && msg.reactions && msg.reactions.length) {
+    if (!msg.isDeleted) {
       var grouped = {};
-      msg.reactions.forEach(function (r) { grouped[r.emoji] = (grouped[r.emoji] || 0) + 1; });
       var mineSet = {};
-      msg.reactions.forEach(function (r) { if (r.userId === currentUserId) mineSet[r.emoji] = 1; });
+      if (msg.reactions && msg.reactions.length) {
+        msg.reactions.forEach(function (r) { grouped[r.emoji] = (grouped[r.emoji] || 0) + 1; });
+        msg.reactions.forEach(function (r) { if (r.userId === currentUserId) mineSet[r.emoji] = 1; });
+      }
       reactionsHtml = '<div class="msg-reactions">';
       Object.keys(grouped).forEach(function (e) {
         reactionsHtml += '<button class="reaction-chip' + (mineSet[e] ? ' mine' : '') + '" data-emoji="' + e + '" onclick="toggleReaction(\'' + msg.id + '\',\'' + e + '\')"><span class="rc-emoji">' + e + '</span><span class="rc-count">' + grouped[e] + '</span></button>';
