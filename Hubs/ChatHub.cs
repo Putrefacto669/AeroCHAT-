@@ -390,6 +390,7 @@ public class ChatHub : Hub
     {
         var uid = UserId;
         if (uid == null || !IsValidStickerPath(stickerPath)) return;
+        if (!stickerPath.StartsWith("/stickers/" + uid + "/", StringComparison.OrdinalIgnoreCase)) return;
 
         var sender = _data.GetUserById(uid);
         if (sender == null) return;
@@ -414,6 +415,7 @@ public class ChatHub : Hub
     {
         var uid = UserId;
         if (uid == null || !IsValidStickerPath(stickerPath)) return;
+        if (!stickerPath.StartsWith("/stickers/" + uid + "/", StringComparison.OrdinalIgnoreCase)) return;
         if (!_data.IsGroupMember(groupId, uid)) return;
 
         var sender = _data.GetUserById(uid);

@@ -4,6 +4,7 @@ using AeroChat.Services;
 var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddControllersWithViews();
+builder.Services.AddHttpClient();
 
 var redis = builder.Configuration.GetConnectionString("Redis");
 if (string.IsNullOrEmpty(redis))

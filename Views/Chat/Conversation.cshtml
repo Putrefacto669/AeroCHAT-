@@ -98,6 +98,10 @@
       <div class="reply-bar" id="replyBar"></div>
 
       <div class="sticker-panel" id="stickerPanel" hidden>
+        <div class="sticker-import">
+          <input type="text" id="stickerLink" placeholder="Pega el link del paquete sticker.ly…" autocomplete="off"/>
+          <button type="button" class="sticker-import-btn" onclick="importStickerPack()">Importar</button>
+        </div>
         <div class="sticker-panel-body" id="stickerPanelBody"></div>
       </div>
 
@@ -725,7 +729,7 @@
       .then(function (items) {
         body.dataset.loaded = '1';
         if (!items.length) {
-          body.innerHTML = '<div class="sticker-empty">No hay stickers aún</div>';
+          body.innerHTML = '<div class="sticker-empty">No hay stickers aún. Importa un paquete pegando su link de sticker.ly.</div>';
           return;
         }
         body.innerHTML = items.map(function (s) {
@@ -743,6 +747,37 @@
     document.getElementById('stickerPanel').hidden = true;
     acInvoke('SendSticker', recipientId, path);
   }
+
+  function importStickerPack() {
+    var input = document.getElementById('stickerLink');
+    var url = input.value.trim();
+    if (!url) return;
+    var btn = document.querySelector('.sticker-import-btn');
+    var old = btn.textContent;
+    btn.disabled = true;
+    btn.textContent = '…';
+    var fd = new FormData();
+    fd.append('url', url);
+    fetch('/Sticker/Import', { method: 'POST', body: fd })
+      .then(function (r) { return r.json().then(function (d) { return { ok: r.ok, d: d }; }); })
+      .then(function (res) {
+        if (!res.ok) throw new Error(res.d.message || 'Error al importar');
+        showToast('Paquete importado: ' + res.d.name + ' (' + res.d.count + ' stickers)', 'success');
+        var body = document.getElementById('stickerPanelBody');
+        body.dataset.loaded = '0';
+        loadStickers();
+        input.value = '';
+      })
+      .catch(function (err) { showToast('No se pudo importar: ' + err.message, 'error'); })
+      .finally(function () { btn.disabled = false; btn.textContent = old; });
+  }
+
+  document.addEventListener('keydown', function (e) {
+    if (stickerOpen && e.key === 'Enter' && e.target.id === 'stickerLink') {
+      e.preventDefault();
+      importStickerPack();
+    }
+  });
 
   document.addEventListener('click', function (e) {
     if (stickerOpen && !e.target.closest('#stickerPanel') && !e.target.closest('.icon-btn-sticker')) {
