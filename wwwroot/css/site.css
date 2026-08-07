@@ -1195,6 +1195,16 @@ audio { width: 200px; height: 32px; margin-top: 4px; border-radius: 8px; }
 }
 .intro-overlay.out { opacity: 0; pointer-events: none; }
 .intro-overlay video { width: 100%; height: 100%; object-fit: contain; }
+.intro-play-prompt {
+  position: absolute; inset: 0; display: flex;
+  align-items: center; justify-content: center; cursor: pointer;
+}
+.intro-play-btn {
+  width: 72px; height: 72px; border-radius: 50%;
+  background: rgba(255,255,255,.92); color: #000;
+  display: flex; align-items: center; justify-content: center;
+  box-shadow: 0 8px 30px rgba(0,0,0,.4);
+}
 .intro-skip {
   position: absolute; top: 16px; right: 16px;
   background: rgba(255,255,255,.14); color: #fff; border: none;
@@ -1203,7 +1213,7 @@ audio { width: 200px; height: 32px; margin-top: 4px; border-radius: 8px; }
 }
 .intro-skip:hover { background: rgba(255,255,255,.26); }
 .intro-sound {
-  position: absolute; bottom: 16px; right: 16px;
+  position: absolute; bottom: calc(16px + env(safe-area-inset-bottom)); right: 16px;
   width: 40px; height: 40px; border-radius: 50%;
   background: rgba(255,255,255,.14); color: #fff; border: none;
   display: flex; align-items: center; justify-content: center; cursor: pointer;
