@@ -30,18 +30,27 @@
           </div>
         </div>
       </a>
-      <button class="icon-btn" title="Buscar" onclick="toggleSearch()">🔍</button>
+      <button class="icon-btn" title="Buscar" onclick="toggleSearch()">
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+      </button>
       <button class="icon-btn icon-btn-call" title="Llamada de voz"
-              onclick="callFriend('@Model.Recipient.Id','@JavaScriptEncoder.Default.Encode(Model.Recipient.DisplayName)','@Model.Recipient.AvatarPath','@Model.Recipient.AvatarColor','audio')">📞</button>
-      <button class="icon-btn icon-btn-call" title="Videollamada"
-              onclick="callFriend('@Model.Recipient.Id','@JavaScriptEncoder.Default.Encode(Model.Recipient.DisplayName)','@Model.Recipient.AvatarPath','@Model.Recipient.AvatarColor','video')">📹</button>
+              onclick="callFriend('@Model.Recipient.Id','@JavaScriptEncoder.Default.Encode(Model.Recipient.DisplayName)','@Model.Recipient.AvatarPath','@Model.Recipient.AvatarColor','audio')">
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.127.96.361 1.903.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0 1 22 16.92z"/></svg>
+      </button>
+      <button class="icon-btn icon-btn-call icon-btn-video" title="Videollamada"
+              onclick="callFriend('@Model.Recipient.Id','@JavaScriptEncoder.Default.Encode(Model.Recipient.DisplayName)','@Model.Recipient.AvatarPath','@Model.Recipient.AvatarColor','video')">
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="23 7 16 12 23 17 23 7"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/></svg>
+      </button>
     </div>
 
     <div class="search-panel" id="searchPanel" hidden>
       <div class="search-panel-head">
-        <span class="search-panel-title">Buscar</span>
+        <span class="search-ic">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+        </span>
         <input type="text" id="searchInput" placeholder="Buscar en la conversación…" autocomplete="off"/>
-        <button type="button" class="icon-btn" onclick="closeSearch()">✕</button>
+        <span class="search-count" id="searchCount" hidden></span>
+        <button type="button" class="icon-btn icon-btn-clear" onclick="closeSearch()" title="Cerrar">✕</button>
       </div>
       <div class="search-panel-results" id="searchResults"></div>
     </div>
@@ -581,14 +590,36 @@
   });
   function renderSearchResults(results) {
     var box = document.getElementById('searchResults');
+    var count = document.getElementById('searchCount');
     if (!box) return;
-    if (!results.length) { box.innerHTML = '<div class="search-empty">Sin resultados</div>'; return; }
+    var inp = document.getElementById('searchInput');
+    var q = inp ? inp.value.trim() : '';
+    if (count) {
+      count.hidden = results.length === 0;
+      count.textContent = results.length + (results.length === 1 ? ' resultado' : ' resultados');
+    }
+    if (!results.length) {
+      box.innerHTML = q
+        ? '<div class="search-empty">Sin resultados para «' + htmlEncode(q) + '»</div>'
+        : '<div class="search-empty">Escribí para buscar…</div>';
+      return;
+    }
     box.innerHTML = results.map(function (m) {
+      var content = htmlEncode(m.content || '');
+      if (q) content = highlightText(content, q);
       return '<div class="search-result" onclick="goToMessage(\'' + m.id + '\')">'
+        + '<span class="search-result-avatar" style="background:' + htmlEncode(m.senderColor || '#6C63FF') + '">' + htmlEncode((m.senderName || '?').charAt(0).toUpperCase()) + '</span>'
+        + '<span class="search-result-body">'
         + '<span class="search-result-name">' + htmlEncode(m.senderName || '') + '</span>'
-        + '<span class="search-result-text">' + htmlEncode(m.content || '') + '</span>'
+        + '<span class="search-result-text">' + content + '</span>'
+        + '</span>'
         + '<span class="search-result-time">' + formatTime(m.createdAt) + '</span></div>';
     }).join('');
+  }
+  function highlightText(text, q) {
+    var needle = q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    var re = new RegExp('(' + needle + ')', 'ig');
+    return text.replace(re, '<mark class="search-hit">$1</mark>');
   }
   function goToMessage(id) {
     closeSearch();
